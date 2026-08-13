@@ -1,7 +1,17 @@
 import axios from 'axios'
 
+function getApiBaseUrl() {
+  const envBase = import.meta.env.VITE_API_BASE_URL
+  if (envBase) return envBase
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location
+    return `${protocol}//${hostname}:8010/api/v1`
+  }
+  return '/api/v1'
+}
+
 export const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: getApiBaseUrl(),
   timeout: 15000,
 })
 
@@ -22,4 +32,3 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
-
