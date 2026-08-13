@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: greenwind-backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: 绿风环境花卉 ERP
+      APP_SECRET: ${APP_SECRET:-change-this-secret-before-production}
+      DATABASE_URL: sqlite:////data/greenwind.db
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    volumes:
+      - ./data:/data
+    ports:
+      - "${BACKEND_PORT:-8010}:8010"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: greenwind-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
