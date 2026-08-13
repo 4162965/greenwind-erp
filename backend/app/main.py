@@ -20,9 +20,26 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+
+def cors_origins() -> list[str]:
+    origins = {
+        settings.frontend_origin,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://192.168.31.154:5173",
+        "http://175.178.106.253:5173",
+    }
+    for item in settings.frontend_origins.split(","):
+        item = item.strip()
+        if item:
+            origins.add(item)
+    return sorted(origin for origin in origins if origin)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin, "http://localhost:5173"],
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
