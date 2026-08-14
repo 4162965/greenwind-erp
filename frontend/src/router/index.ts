@@ -10,6 +10,7 @@ import MobileExchangeRequestView from '../views/mobile/MobileExchangeRequestView
 import MobileOrderCreateView from '../views/mobile/MobileOrderCreateView.vue'
 import MobileProductCreateView from '../views/mobile/MobileProductCreateView.vue'
 import ModuleView from '../views/ModuleView.vue'
+import BasicListView from '../views/BasicListView.vue'
 import OrderManagementView from '../views/OrderManagementView.vue'
 import ProductCatalogView from '../views/ProductCatalogView.vue'
 import PurchaseManagementView from '../views/PurchaseManagementView.vue'
@@ -81,22 +82,55 @@ const routes = [
       { path: 'module/report/:reportType', name: 'report-summary', component: ReportSummaryView, meta: { title: title.projectCost, permission: 'reports' } },
       { path: 'module/operation/center', name: 'operation-center', component: OperationCenterView, meta: { title: title.operationCenter, permission: 'dashboard' } },
 
-      // 下面这些页面原源码有乱码导致 Vue 编译失败，先统一进入占位页，系统先可用。
-      { path: 'customers', name: 'customers', component: ModuleView, meta: { title: title.customers, permission: 'customers' } },
-      { path: 'projects', name: 'projects', component: ModuleView, meta: { title: title.projects, permission: 'projects' } },
-      { path: 'staff', name: 'staff', component: ModuleView, meta: { title: title.staff, permission: 'staff' } },
-      { path: 'module/purchase/my', name: 'my-purchase', component: ModuleView, meta: { title: title.myPurchase, permission: 'purchase_inventory' } },
-      { path: 'module/inventory/inbound', name: 'my-inbound', component: ModuleView, meta: { title: title.myInbound, permission: 'purchase_inventory' } },
-      { path: 'module/inventory/check', name: 'inventory-check', component: ModuleView, meta: { title: title.inventory, permission: 'purchase_inventory' } },
-      { path: 'module/system/admins', name: 'system-users', component: ModuleView, meta: { title: title.systemUsers, permission: 'system' } },
-      { path: 'module/vehicle/list', name: 'vehicle-list', component: ModuleView, meta: { title: title.vehicle, permission: 'vehicle' } },
-      { path: 'module/maintenance/manage', name: 'maintenance-manage', component: ModuleView, meta: { title: title.maintenanceManage, permission: 'schedule_workflow' } },
-      { path: 'module/workflow/progress', name: 'workflow-progress', component: ModuleView, meta: { title: title.workflow, permission: 'schedule_workflow' } },
-      { path: 'module/finance/receivable', name: 'receivable-management', component: ModuleView, meta: { title: title.receivable, permission: 'finance' } },
-      { path: 'module/finance/contract', name: 'contract-management', component: ModuleView, meta: { title: title.contract, permission: 'finance' } },
-      { path: 'module/finance/:financeType', name: 'finance-records', component: ModuleView, meta: { title: title.finance, permission: 'finance' } },
-      { path: 'module/report/project-cost', name: 'project-cost-report', component: ModuleView, meta: { title: title.projectCost, permission: 'reports' } },
-      { path: 'module/operation/attachments', name: 'attachment-center', component: ModuleView, meta: { title: title.attachments, permission: 'dashboard' } },
+      { path: 'customers', name: 'customers', component: BasicListView, meta: { title: title.customers, endpoint: '/customers', permission: 'customers', columns: [
+        { prop: 'customer_type', label: '客户类型', width: 105 }, { prop: 'name', label: '客户名称', minWidth: 150 }, { prop: 'project_name', label: '项目名称', minWidth: 160 }, { prop: 'contact_person', label: '负责人', width: 100 }, { prop: 'phone', label: '电话', width: 125 }, { prop: 'area', label: '区域', width: 90 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'maintainer_name', label: '养护员', width: 100 }, { prop: 'address', label: '地址', minWidth: 220 },
+      ] } },
+      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', permission: 'projects', columns: [
+        { prop: 'code', label: '项目编号', width: 120 }, { prop: 'name', label: '项目名称', minWidth: 180 }, { prop: 'customer_name', label: '客户', minWidth: 140 }, { prop: 'business_types', label: '业务类型', minWidth: 130 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'address', label: '地址', minWidth: 220 },
+      ] } },
+      { path: 'staff', name: 'staff', component: BasicListView, meta: { title: title.staff, endpoint: '/employees', permission: 'staff', columns: [
+        { prop: 'name', label: '姓名', width: 110 }, { prop: 'phone', label: '手机号', width: 125 }, { prop: 'department', label: '部门', width: 110 }, { prop: 'position', label: '岗位', width: 120 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'login_enabled', label: '允许登录', width: 100 }, { prop: 'module_permissions', label: '模块权限', minWidth: 220 },
+      ] } },
+      { path: 'module/purchase/my', name: 'my-purchase', component: BasicListView, meta: { title: title.myPurchase, endpoint: '/purchases/my', permission: 'purchase_inventory', columns: [
+        { prop: 'purchase_no', label: '采购单号', width: 145 }, { prop: 'source_order_no', label: '来源订单', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'status', label: '状态', width: 100 }, { prop: 'supplier', label: '供应商', minWidth: 120 }, { prop: 'total_amount', label: '金额', width: 100 },
+      ] } },
+      { path: 'module/inventory/inbound', name: 'my-inbound', component: BasicListView, meta: { title: title.myInbound, endpoint: '/purchases/inbound', permission: 'purchase_inventory', columns: [
+        { prop: 'purchase_no', label: '采购单号', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'status', label: '状态', width: 100 }, { prop: 'supplier', label: '供应商', minWidth: 120 }, { prop: 'total_amount', label: '金额', width: 100 },
+      ] } },
+      { path: 'module/inventory/check', name: 'inventory-check', component: BasicListView, meta: { title: title.inventory, endpoint: '/inventory', permission: 'purchase_inventory', columns: [
+        { prop: 'product_code', label: '商品编码', width: 130 }, { prop: 'product_name', label: '商品名称', minWidth: 170 }, { prop: 'category', label: '分类', width: 100 }, { prop: 'specification', label: '规格', minWidth: 160 }, { prop: 'unit', label: '单位', width: 80 }, { prop: 'quantity', label: '库存', width: 100 },
+      ] } },
+      { path: 'module/system/admins', name: 'system-users', component: BasicListView, meta: { title: title.systemUsers, endpoint: '/system/users', permission: 'system', columns: [
+        { prop: 'username', label: '账号', width: 140 }, { prop: 'display_name', label: '姓名', width: 120 }, { prop: 'role', label: '角色', width: 100 }, { prop: 'is_active', label: '启用', width: 80 }, { prop: 'module_permissions', label: '模块权限', minWidth: 220 }, { prop: 'product_category_permissions', label: '商品分类权限', minWidth: 220 },
+      ] } },
+      { path: 'module/vehicle/list', name: 'vehicle-list', component: BasicListView, meta: { title: title.vehicle, endpoint: '/vehicles', permission: 'vehicle', columns: [
+        { prop: 'plate_no', label: '车牌号', width: 130 }, { prop: 'vehicle_type', label: '车辆类型', width: 120 }, { prop: 'driver_name', label: '默认司机', width: 110 }, { prop: 'status', label: '状态', width: 100 }, { prop: 'inspection_date', label: '年检日期', width: 120 }, { prop: 'insurance_date', label: '保险日期', width: 120 }, { prop: 'notes', label: '备注', minWidth: 180 },
+      ] } },
+      { path: 'module/maintenance/manage', name: 'maintenance-manage', component: BasicListView, meta: { title: title.maintenanceManage, endpoint: '/maintenance/plans', permission: 'schedule_workflow', columns: [
+        { prop: 'plan_no', label: '计划编号', width: 140 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'maintainer_name', label: '养护员', width: 110 }, { prop: 'content', label: '内容', minWidth: 220 }, { prop: 'status', label: '状态', width: 100 },
+      ] } },
+      { path: 'module/workflow/progress', name: 'workflow-progress', component: BasicListView, meta: { title: title.workflow, endpoint: '/workflows/requests', permission: 'schedule_workflow', columns: [
+        { prop: 'request_no', label: '审批编号', width: 145 }, { prop: 'source_no', label: '来源单号', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'applicant', label: '申请人', width: 100 }, { prop: 'status', label: '状态', width: 100 }, { prop: 'reason', label: '原因', minWidth: 220 },
+      ] } },
+      { path: 'module/finance/receivable', name: 'receivable-management', component: BasicListView, meta: { title: title.receivable, endpoint: '/finance/receivables', permission: 'finance', columns: [
+        { prop: 'receivable_no', label: '应收编号', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'contract_no', label: '合同编号', width: 130 }, { prop: 'billing_period', label: '账期', width: 120 }, { prop: 'amount', label: '金额', width: 100 }, { prop: 'status', label: '状态', width: 100 },
+      ] } },
+      { path: 'module/finance/contract', name: 'contract-management', component: BasicListView, meta: { title: title.contract, endpoint: '/contracts', permission: 'finance', columns: [
+        { prop: 'contract_no', label: '合同编号', width: 145 }, { prop: 'name', label: '合同名称', minWidth: 180 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'business_types', label: '业务', minWidth: 120 }, { prop: 'amount', label: '金额', width: 100 }, { prop: 'status', label: '状态', width: 100 },
+      ] } },
+      { path: 'module/finance/receipt', name: 'finance-receipts', component: BasicListView, meta: { title: '收款单', endpoint: '/finance/receipts', permission: 'finance', columns: [
+        { prop: 'receipt_no', label: '收款编号', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'payer_name', label: '付款方', minWidth: 140 }, { prop: 'amount', label: '金额', width: 100 }, { prop: 'receipt_date', label: '收款日期', width: 120 },
+      ] } },
+      { path: 'module/finance/invoice', name: 'finance-invoices', component: BasicListView, meta: { title: '发票管理', endpoint: '/finance/invoices', permission: 'finance', columns: [
+        { prop: 'invoice_no', label: '发票编号', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'invoice_type', label: '类型', width: 110 }, { prop: 'amount', label: '金额', width: 100 }, { prop: 'status', label: '状态', width: 100 },
+      ] } },
+      { path: 'module/finance/:financeType', name: 'finance-records', component: BasicListView, meta: { title: title.finance, endpoint: '/finance/summary', permission: 'finance', columns: [
+        { prop: 'name', label: '名称', minWidth: 160 }, { prop: 'amount', label: '金额', width: 120 }, { prop: 'status', label: '状态', width: 120 },
+      ] } },
+      { path: 'module/report/project-cost', redirect: '/module/report/profit' },
+      { path: 'module/operation/attachments', name: 'attachment-center', component: BasicListView, meta: { title: title.attachments, endpoint: '/attachments', permission: 'dashboard', columns: [
+        { prop: 'file_name', label: '文件名', minWidth: 200 }, { prop: 'target_type', label: '关联类型', width: 110 }, { prop: 'target_name', label: '关联名称', minWidth: 160 }, { prop: 'uploader_name', label: '上传人', width: 100 }, { prop: 'created_at', label: '上传时间', width: 170 },
+      ] } },
 
       { path: 'module/operation/articles', redirect: '/module/operation/center' },
       { path: 'module/operation/renewal', redirect: '/module/operation/center' },
