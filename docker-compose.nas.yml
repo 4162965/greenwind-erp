@@ -1,0 +1,63 @@
+services:
+  backend:
+    image: python:3.11-slim
+    container_name: greenwind-backend
+    restart: unless-stopped
+    working_dir: /repo
+    environment:
+      APP_NAME: 绿风环境花卉 ERP
+      APP_SECRET: greenwind-change-this-secret
+      DATABASE_URL: sqlite:////data/greenwind.db
+      FRONTEND_ORIGIN: http://175.178.106.253:5173
+      FRONTEND_ORIGINS: http://192.168.31.154:5173,http://175.178.106.253:5173
+    volumes:
+      - greenwind-code:/repo
+      - greenwind-data:/data
+    ports:
+      - "8010:8010"
+    command: >
+      sh -c "
+      apt-get update &&
+      apt-get install -y --no-install-recommends git &&
+      if [ -d /repo/.git ]; then
+        cd /repo && git pull;
+      else
+        rm -rf /repo/* /repo/.[!.]* /repo/..?* 2>/dev/null || true;
+        git clone https://github.com/4162965/greenwind-erp.git /repo;
+      fi &&
+      cd /repo/backend &&
+      pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt &&
+      python -m app.seed &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8010
+      "
+
+  frontend:
+    image: node:20
+    container_name: greenwind-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    working_dir: /repo
+    volumes:
+      - greenwind-code:/repo
+    ports:
+      - "5173:5173"
+    command: >
+      sh -c "
+      for i in $(seq 1 120); do
+        if [ -f /repo/frontend/package.json ]; then
+          break;
+        fi;
+        echo waiting for source code...;
+        sleep 2;
+      done &&
+      cd /repo/frontend &&
+      rm -rf node_modules package-lock.json &&
+      npm install --registry=https://registry.npmmirror.com &&
+      npm install element-plus @element-plus/icons-vue --registry=https://registry.npmmirror.com &&
+      npm run dev -- --host 0.0.0.0
+      "
+
+volumes:
+  greenwind-code:
+  greenwind-data:
