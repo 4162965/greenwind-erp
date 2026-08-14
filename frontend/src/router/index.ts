@@ -11,6 +11,7 @@ import MobileOrderCreateView from '../views/mobile/MobileOrderCreateView.vue'
 import MobileProductCreateView from '../views/mobile/MobileProductCreateView.vue'
 import ModuleView from '../views/ModuleView.vue'
 import BasicListView from '../views/BasicListView.vue'
+import EntityCrudView from '../views/EntityCrudView.vue'
 import OrderManagementView from '../views/OrderManagementView.vue'
 import ProductCatalogView from '../views/ProductCatalogView.vue'
 import PurchaseManagementView from '../views/PurchaseManagementView.vue'
@@ -24,7 +25,7 @@ import ForbiddenView from '../views/ForbiddenView.vue'
 import AppLayout from '../layouts/AppLayout.vue'
 
 const title = {
-  dashboard: '工作台',
+  dashboard: '首页工作台',
   myWorkbench: '我的工作台',
   goods: '商品管理',
   customers: '客户管理',
@@ -73,6 +74,11 @@ const routes = [
       { path: 'module/workbench/my', name: 'my-workbench', component: MyWorkbenchView, meta: { title: title.myWorkbench, permission: 'dashboard' } },
       { path: '403', name: 'forbidden', component: ForbiddenView, meta: { title: '无权限' } },
       { path: 'goods', name: 'goods', component: ProductCatalogView, meta: { title: title.goods, permission: 'goods' } },
+      { path: 'customers', name: 'customers', component: EntityCrudView, meta: { title: title.customers, entity: 'customer', permission: 'customers' } },
+      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', permission: 'projects', columns: [
+        { prop: 'code', label: '项目编号', width: 120 }, { prop: 'name', label: '项目名称', minWidth: 180 }, { prop: 'customer_name', label: '客户', minWidth: 140 }, { prop: 'business_types', label: '业务类型', minWidth: 130 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'address', label: '地址', minWidth: 220 },
+      ] } },
+      { path: 'staff', name: 'staff', component: EntityCrudView, meta: { title: title.staff, entity: 'employee', permission: 'staff' } },
       { path: 'module/order/:orderType', name: 'order-management', component: OrderManagementView, meta: { title: title.orders, permission: 'orders' } },
       { path: 'module/purchase/list', name: 'purchase-list', component: PurchaseManagementView, meta: { title: title.purchase, permission: 'purchase_inventory' } },
       { path: 'module/warehouse/list', name: 'warehouse-list', component: OutboundManagementView, meta: { title: title.outbound, permission: 'orders' } },
@@ -82,15 +88,6 @@ const routes = [
       { path: 'module/report/:reportType', name: 'report-summary', component: ReportSummaryView, meta: { title: title.projectCost, permission: 'reports' } },
       { path: 'module/operation/center', name: 'operation-center', component: OperationCenterView, meta: { title: title.operationCenter, permission: 'dashboard' } },
 
-      { path: 'customers', name: 'customers', component: BasicListView, meta: { title: title.customers, endpoint: '/customers', permission: 'customers', columns: [
-        { prop: 'customer_type', label: '客户类型', width: 105 }, { prop: 'name', label: '客户名称', minWidth: 150 }, { prop: 'project_name', label: '项目名称', minWidth: 160 }, { prop: 'contact_person', label: '负责人', width: 100 }, { prop: 'phone', label: '电话', width: 125 }, { prop: 'area', label: '区域', width: 90 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'maintainer_name', label: '养护员', width: 100 }, { prop: 'address', label: '地址', minWidth: 220 },
-      ] } },
-      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', permission: 'projects', columns: [
-        { prop: 'code', label: '项目编号', width: 120 }, { prop: 'name', label: '项目名称', minWidth: 180 }, { prop: 'customer_name', label: '客户', minWidth: 140 }, { prop: 'business_types', label: '业务类型', minWidth: 130 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'address', label: '地址', minWidth: 220 },
-      ] } },
-      { path: 'staff', name: 'staff', component: BasicListView, meta: { title: title.staff, endpoint: '/employees', permission: 'staff', columns: [
-        { prop: 'name', label: '姓名', width: 110 }, { prop: 'phone', label: '手机号', width: 125 }, { prop: 'department', label: '部门', width: 110 }, { prop: 'position', label: '岗位', width: 120 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'login_enabled', label: '允许登录', width: 100 }, { prop: 'module_permissions', label: '模块权限', minWidth: 220 },
-      ] } },
       { path: 'module/purchase/my', name: 'my-purchase', component: BasicListView, meta: { title: title.myPurchase, endpoint: '/purchases/my', permission: 'purchase_inventory', columns: [
         { prop: 'purchase_no', label: '采购单号', width: 145 }, { prop: 'source_order_no', label: '来源订单', width: 145 }, { prop: 'project_name', label: '项目', minWidth: 160 }, { prop: 'status', label: '状态', width: 100 }, { prop: 'supplier', label: '供应商', minWidth: 120 }, { prop: 'total_amount', label: '金额', width: 100 },
       ] } },
