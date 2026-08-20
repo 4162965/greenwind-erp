@@ -13,6 +13,11 @@ __pycache__/
 backend/*.db
 backend/*.sqlite*
 
+# 允许提交明确用于部署同步的数据快照
+!deploy/
+!deploy/seed/
+!deploy/seed/*.db
+
 # 环境变量和密钥不要上传
 .env
 backend/.env

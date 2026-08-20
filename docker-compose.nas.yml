@@ -25,6 +25,13 @@ services:
         rm -rf /repo/* /repo/.[!.]* /repo/..?* 2>/dev/null || true;
         git clone https://github.com/4162965/greenwind-erp.git /repo;
       fi &&
+      if [ -f /repo/deploy/seed/greenwind.seed.20260820.db ] && [ ! -f /data/.greenwind_seed_20260820_imported ]; then
+        if [ -f /data/greenwind.db ]; then
+          cp /data/greenwind.db /data/greenwind.before-seed-20260820-$(date +%Y%m%d%H%M%S).db;
+        fi;
+        cp /repo/deploy/seed/greenwind.seed.20260820.db /data/greenwind.db;
+        touch /data/.greenwind_seed_20260820_imported;
+      fi &&
       cd /repo/backend &&
       pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt &&
       python -m app.seed &&
