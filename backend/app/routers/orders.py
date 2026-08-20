@@ -60,9 +60,12 @@ APPROVAL_FLOW_ENABLED = False
 
 def next_business_order_no(order_type: str, db: Session, preferred: str = "") -> str:
     prefix = ORDER_PREFIX.get(order_type, "DD")
-    preferred = (preferred or "").strip().upper().replace("-", "")
-    if re.fullmatch(rf"{prefix}\d{{6}}", preferred) and not db.scalar(select(BusinessOrder.id).where(BusinessOrder.order_no == preferred)):
+    preferred = (preferred or "").strip()
+    if preferred and not db.scalar(select(BusinessOrder.id).where(BusinessOrder.order_no == preferred)):
         return preferred
+    preferred_compact = preferred.upper().replace("-", "")
+    if re.fullmatch(rf"{prefix}\d{{6}}", preferred_compact) and not db.scalar(select(BusinessOrder.id).where(BusinessOrder.order_no == preferred_compact)):
+        return preferred_compact
     rows = db.scalars(select(BusinessOrder.order_no).where(BusinessOrder.order_no.like(f"{prefix}%"))).all()
     max_no = 0
     for value in rows:
@@ -336,6 +339,10 @@ def order_items_all_in_stock(items: list[BusinessOrderItem], db: Session) -> boo
     if not product_items:
         return False
     return all(order_item_available_stock(item, db) >= float(item.quantity or 0) for item in product_items)
+
+
+def order_item_stock_shortage(item: BusinessOrderItem, db: Session) -> float:
+    return max(0, float(item.quantity or 0) - order_item_available_stock(item, db))
 
 
 def replace_items(order: BusinessOrder, entries: list[dict], db: Session):
@@ -916,10 +923,26 @@ def mobile_exchange_request(
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="数量必须大于0")
     request_type = str(payload.get("request_type") or "换花")
-    product_name = str(payload.get("product_name") or request_type or "换花")
+    product_id = int(payload["product_id"]) if payload.get("product_id") else None
+    variant_id = int(payload["variant_id"]) if payload.get("variant_id") else None
+    product_name = str(payload.get("product_name") or "")
     variant_name = str(payload.get("variant_name") or "")
     unit = str(payload.get("unit") or "盆")
     location_text = str(payload.get("location_text") or "")
+    if product_id:
+        product = db.get(Product, product_id)
+        if not product:
+            raise HTTPException(status_code=400, detail="商品不存在")
+        product_name = product_name or product.name
+        if variant_id:
+            variant = db.get(ProductVariant, variant_id)
+            if not variant or variant.product_id != product.id:
+                raise HTTPException(status_code=400, detail="商品规格不存在")
+            variant_name = variant_name or variant_label(variant)
+            unit = unit or variant.unit or product.unit
+        else:
+            unit = unit or product.unit
+    product_name = product_name or request_type or "换花"
     sequence = (db.scalar(select(func.count()).select_from(BusinessOrder)) or 0) + 1
     order_no = str(payload.get("order_no") or "").strip() or source_no("SJHH", f"{date.today().strftime('%Y%m%d')}{sequence:04d}")
     while db.scalar(select(BusinessOrder).where(BusinessOrder.order_no == order_no)):
@@ -945,6 +968,8 @@ def mobile_exchange_request(
     db.flush()
     item = BusinessOrderItem(
         order_id=order.id,
+        product_id=product_id,
+        variant_id=variant_id,
         product_name=product_name,
         variant_name=variant_name,
         location_text=location_text,
@@ -954,6 +979,8 @@ def mobile_exchange_request(
         amount=0,
         notes=f"手机端{request_type}：{payload.get('reason') or ''}".strip("："),
     )
+    if product_id:
+        normalize_order_item(item, db)
     db.add(item)
     db.flush()
     ensure_order_approval(order, db)
@@ -1059,7 +1086,12 @@ def create_purchase_from_order(
     product_items = [item for item in items if item.product_id]
     if not product_items:
         raise HTTPException(status_code=400, detail="订单没有可采购的商品明细")
-    if order_items_all_in_stock(product_items, db):
+    if order.need_purchase:
+        shortage_items = [(item, order_item_stock_shortage(item, db)) for item in product_items]
+        shortage_items = [(item, shortage) for item, shortage in shortage_items if shortage > 0]
+    else:
+        shortage_items = [(item, float(item.quantity or 0)) for item in product_items]
+    if order.need_purchase and not shortage_items:
         order.need_purchase = False
         order.status = "待配送" if order.need_delivery else "已完成"
         db.commit()
@@ -1077,14 +1109,17 @@ def create_purchase_from_order(
     )
     db.add(purchase)
     db.flush()
-    for source_item in product_items:
+    for source_item, shortage_quantity in shortage_items:
         product = db.get(Product, source_item.product_id)
         is_bundle_purchase = bool(product and product.package_conversion_enabled)
         purchase_variant_id = None if is_bundle_purchase else source_item.variant_id
         purchase_variant_name = "成套采购" if is_bundle_purchase else source_item.variant_name
         purchase_unit = (product.purchase_unit or product.unit) if is_bundle_purchase and product else item_unit(source_item, db)
         purchase_price = float(product.reference_purchase_price or 0) if is_bundle_purchase and product else cost_price(source_item, db)
+        available_stock = order_item_available_stock(source_item, db)
         source_note_parts = [source_item.location_text or source_item.notes or ""]
+        if available_stock > 0:
+            source_note_parts.append(f"仓库已有 {available_stock:g}{source_item.unit}，本次只采购缺口 {shortage_quantity:g}{source_item.unit}")
         if is_bundle_purchase and source_item.variant_name:
             source_note_parts.append(f"项目需要型号：{source_item.variant_name}；采购按整套执行")
         purchase_item = PurchaseOrderItem(
@@ -1093,7 +1128,7 @@ def create_purchase_from_order(
             variant_id=purchase_variant_id,
             product_name=source_item.product_name,
             variant_name=purchase_variant_name,
-            quantity=source_item.quantity,
+            quantity=shortage_quantity,
             received_quantity=0,
             unit=purchase_unit,
             unit_price=purchase_price,

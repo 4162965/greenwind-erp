@@ -9,10 +9,16 @@ type Row = Record<string, any>
 const loading = ref(false)
 const saving = ref(false)
 const projects = ref<Row[]>([])
+const products = ref<Row[]>([])
+const productOptions = ref<Row[]>([])
+const variantCache = reactive<Record<number, Row[]>>({})
 const recentOrders = ref<Row[]>([])
 const form = reactive<Row>({
   request_type: '换花',
   project_id: null,
+  product_key: '',
+  product_id: null,
+  variant_id: null,
   location_text: '',
   product_name: '',
   variant_name: '',
@@ -29,11 +35,15 @@ const form = reactive<Row>({
 async function loadData() {
   loading.value = true
   try {
-    const [projectRes, orderRes] = await Promise.all([
+    const [projectRes, productRes, orderRes] = await Promise.all([
       api.get('/projects'),
+      api.get('/products'),
       api.get('/orders', { params: { order_type: 'exchange' } }),
     ])
     projects.value = projectRes.data.items || []
+    products.value = productRes.data.items || []
+    await Promise.all(products.value.map((product) => loadVariants(product.id)))
+    productOptions.value = buildProductOptions()
     recentOrders.value = orderRes.data.items || []
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || '报单数据加载失败')
@@ -42,7 +52,67 @@ async function loadData() {
   }
 }
 
+function parseJson<T>(value: string | undefined, fallback: T): T {
+  if (!value) return fallback
+  try { return JSON.parse(value) as T } catch { return fallback }
+}
+
+function variantLabel(item: Row) {
+  const values = parseJson<Record<string, string>>(item.specification_values, {})
+  return Object.values(values).filter(Boolean).join(' · ') || item.specification || item.code
+}
+
+async function loadVariants(productId: number | string | null) {
+  const key = Number(productId)
+  if (!key || variantCache[key]) return
+  variantCache[key] = (await api.get(`/products/${key}/variants`)).data.items || []
+}
+
+function buildProductOptions() {
+  return products.value.flatMap((product) => {
+    const variants = variantCache[product.id] || []
+    if (!variants.length) {
+      return [{
+        key: `${product.id}:`,
+        product_id: product.id,
+        variant_id: null,
+        label: `${product.name}${product.specification ? ' · ' + product.specification : ''}`,
+        product_name: product.name,
+        variant_name: product.specification || '',
+        unit: product.project_unit || product.unit || '盆',
+      }]
+    }
+    return variants.map((variant) => ({
+      key: `${product.id}:${variant.id}`,
+      product_id: product.id,
+      variant_id: variant.id,
+      label: `${product.name} · ${variantLabel(variant)}`,
+      product_name: product.name,
+      variant_name: variantLabel(variant),
+      unit: variant.unit || product.project_unit || product.unit || '盆',
+    }))
+  })
+}
+
+function handleProductSelect() {
+  const option = productOptions.value.find((entry) => entry.key === form.product_key)
+  if (!option) {
+    form.product_id = null
+    form.variant_id = null
+    form.product_name = String(form.product_key || '')
+    return
+  }
+  form.product_id = option.product_id
+  form.variant_id = option.variant_id
+  form.product_name = option.product_name
+  form.variant_name = option.variant_name
+  form.unit = option.unit
+}
+
 function resetAfterSave() {
+  form.product_key = ''
+  form.product_id = null
+  form.variant_id = null
   form.location_text = ''
   form.product_name = ''
   form.variant_name = ''
@@ -108,7 +178,18 @@ onMounted(loadData)
         </el-form-item>
         <div class="mobile-inline-two">
           <el-form-item label="植物/花盆" required>
-            <el-input v-model="form.product_name" placeholder="例如：小绿萝 / 福字盆" />
+            <el-select
+              v-model="form.product_key"
+              filterable
+              clearable
+              allow-create
+              default-first-option
+              placeholder="选择商品或直接输入"
+              @change="handleProductSelect"
+            >
+              <el-option v-for="option in productOptions" :key="option.key" :label="option.label" :value="option.key" />
+            </el-select>
+            <el-input v-if="!form.product_id" v-model="form.product_name" class="manual-product-input" placeholder="例如：小绿萝 / 福字盆" />
           </el-form-item>
           <el-form-item label="规格/型号">
             <el-input v-model="form.variant_name" placeholder="例如：180# / 中号" />
@@ -153,3 +234,9 @@ onMounted(loadData)
     </section>
   </div>
 </template>
+
+<style scoped>
+.manual-product-input {
+  margin-top: 8px;
+}
+</style>
