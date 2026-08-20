@@ -121,14 +121,17 @@ loadMovements()
 
     <article class="panel table-panel">
       <div class="table-toolbar inventory-toolbar">
-        <el-input v-model="keyword" clearable :prefix-icon="Search" placeholder="鎼滅储鍟嗗搧鍚嶇О銆佺紪鐮併€佸垎绫? @keyup.enter="loadRows" @clear="loadRows" />
+        <el-input v-model="keyword" clearable :prefix-icon="Search" placeholder="搜索规格编码、商品编码、商品名称或分类" @keyup.enter="loadRows" @clear="loadRows" />
         <el-checkbox v-model="lowStockOnly" @change="loadRows">鍙湅缂鸿揣</el-checkbox>
         <el-button type="success" plain :icon="Search" @click="loadRows">鏌ヨ</el-button>
         <el-button :icon="Refresh" @click="keyword=''; lowStockOnly=false; loadRows()">閲嶇疆</el-button>
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="product_code" label="鍟嗗搧缂栫爜" min-width="130" />
+        <el-table-column prop="variant_code" label="规格编码" min-width="150">
+          <template #default="scope">{{ scope.row.variant_code || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="product_code" label="商品编码" min-width="130" />
         <el-table-column prop="product_name" label="鍟嗗搧鍚嶇О" min-width="180" />
         <el-table-column prop="category" label="鍒嗙被" width="100" />
         <el-table-column label="绫诲瀷" width="86">
@@ -205,8 +208,9 @@ loadMovements()
 
     <el-dialog v-model="dialogVisible" title="鐩樼偣璋冩暣" width="520px" destroy-on-close>
       <div v-if="selected" class="adjust-card">
-        <div><span>鍟嗗搧</span><strong>{{ selected.product_name }}</strong></div>
-        <div><span>瑙勬牸</span><strong>{{ selected.specification }}</strong></div>
+        <div><span>规格编码</span><strong>{{ selected.variant_code || '—' }}</strong></div>
+        <div><span>商品</span><strong>{{ selected.product_name }}</strong></div>
+        <div><span>规格</span><strong>{{ selected.specification }}</strong></div>
         <div><span>褰撳墠搴撳瓨</span><strong>{{ formatNumber(selected.stock) }} {{ selected.unit }}</strong></div>
       </div>
       <el-form label-position="top">

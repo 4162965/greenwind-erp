@@ -47,24 +47,33 @@ const removedVariantIds = ref<number[]>([])
 const mainImageInput = ref<HTMLInputElement>()
 let variantSequence = 1
 
+function todayProductPrefix() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `SP-${year}${month}${day}`
+}
+
 function nextProductCode() {
+  const prefix = todayProductPrefix()
   const usedNumbers = rows.value
     .map((row) => {
       const text = String(row.code || '')
-      const match = text.match(/^P-(\d+)$/) || text.match(/^(\d+)$/)
+      const match = text.match(new RegExp(`^${prefix}(\\d+)$`))
       return Number(match?.[1] || 0)
     })
     .filter((value) => Number.isFinite(value))
   const next = Math.max(0, ...usedNumbers) + 1
-  return `P-${String(next).padStart(5, '0')}`
+  return `${prefix}${next}`
 }
 
 function nextVariantCode() {
-  return `${form.code || 'P-00001'}-${variantSequence++}`
+  return `${form.code || nextProductCode()}-${variantSequence++}`
 }
 
 const emptyForm = () => ({
-  code: nextProductCode(), name: '', category: '植物', specification: '', unit: '盆',
+  code: '', name: '', category: '植物', specification: '', unit: '盆',
   sale_price: 0, stock: 0, image_url: '', image_urls: '', specification_items: '', purchase_unit: '盆',
   base_unit: '盆', project_unit: '盆', conversion_rate: 1, project_conversion_rate: 1,
   reference_purchase_price: 0, monthly_rental_price: 0, replacement_cost_price: 0,
@@ -120,6 +129,27 @@ function resetForm(row?: ProductRow) {
   variantSequence = 1
 }
 
+async function fillNextProductCode() {
+  if (editingId.value || form.code) return
+  try {
+    const response = await api.get('/products/next-code')
+    form.code = response.data.code || nextProductCode()
+  } catch {
+    form.code = nextProductCode()
+  }
+  refreshVariantCodes()
+}
+
+function refreshVariantCodes() {
+  const baseCode = form.code || nextProductCode()
+  variants.value.forEach((variant, index) => {
+    if (!variant.id || !variant.code || /^SP-\d{8}\d+-\d+$/.test(variant.code) || /^P-\d+-\d+$/.test(variant.code)) {
+      variant.code = `${baseCode}-${index + 1}`
+    }
+  })
+  variantSequence = variants.value.length + 1
+}
+
 async function loadRows() {
   loading.value = true
   try {
@@ -171,12 +201,13 @@ async function addCategory() {
   }
 }
 
-function openCreate() {
+async function openCreate() {
   editingId.value = null
   unitOptions.value = getUnitOptions()
   loadCategories()
   resetForm()
   variants.value = [newVariant()]
+  await fillNextProductCode()
   dialogVisible.value = true
 }
 
@@ -224,7 +255,10 @@ function removeDimension(index: number) {
   specDimensions.value.splice(index, 1)
   variants.value.forEach((variant) => delete variant.values[name])
 }
-function addVariant() { variants.value.push(newVariant()) }
+function addVariant() {
+  variants.value.push(newVariant({ code: `${form.code || nextProductCode()}-${variants.value.length + 1}` }))
+  variantSequence = variants.value.length + 1
+}
 function applyBundlePurchasePreset() {
   form.purchase_unit = '套'
   form.unit = '套'
@@ -234,7 +268,7 @@ function applyBundlePurchasePreset() {
   const isBlankDefault = variants.value.length === 1 && !Object.values(variants.value[0].values).some(Boolean)
   if (isBlankDefault) {
     variants.value = ['大号', '中号', '小号'].map((size, index) => newVariant({
-      code: `${form.code || 'P-00001'}-${['L', 'M', 'S'][index]}`,
+      code: `${form.code || nextProductCode()}-${index + 1}`,
       values: { 盆径: size, 高度: '', 冠幅: '' },
       unit: '个',
       conversion_quantity: 1,
@@ -309,8 +343,8 @@ function activeVariant(row: ProductRow) {
 }
 function activeCatalogItem(row: ProductRow) {
   const variant = activeVariant(row)
-  if (variant) return { label: variantLabel(variant), stock: variant.stock, unit: variant.unit, image_url: variant.image_url || row.image_url }
-  return { label: row.purchase_unit || row.unit, stock: row.stock, unit: row.purchase_unit || row.unit, image_url: row.image_url }
+  if (variant) return { label: variantLabel(variant), code: variant.code, stock: variant.stock, unit: variant.unit, image_url: variant.image_url || row.image_url }
+  return { label: row.purchase_unit || row.unit, code: row.code, stock: row.stock, unit: row.purchase_unit || row.unit, image_url: row.image_url }
 }
 function cardImage(row: ProductRow) {
   return activeCatalogItem(row).image_url
@@ -320,6 +354,7 @@ function selectVariant(row: ProductRow, index: number) { row.active_variant_inde
 function openStock(row: ProductRow) { stockProduct.value = row; stockVisible.value = true }
 
 async function save() {
+  if (!editingId.value) refreshVariantCodes()
   if (!form.code.trim() || !form.name.trim()) { ElMessage.warning('请填写商品编码和商品名称'); return }
   if (!variants.value.length || variants.value.some((item) => !item.code.trim())) { ElMessage.warning('请填写每个规格的规格编码'); return }
   if (new Set(variants.value.map((item) => item.code.trim())).size !== variants.value.length) { ElMessage.warning('同一商品的规格编码不能重复'); return }
@@ -398,9 +433,9 @@ onMounted(() => {
         <article v-for="row in rows" :key="row.id" class="catalog-card">
           <div class="catalog-media"><el-image v-if="cardImage(row)" :src="cardImage(row)" fit="cover" /><div v-else class="catalog-image-empty"><el-icon><Picture /></el-icon><span>暂无图片</span></div></div>
           <div class="catalog-content">
-            <div class="catalog-title"><span>【{{ row.category || '通用' }}】</span><strong>{{ row.name }}</strong></div>
+            <div class="catalog-title"><span>【{{ row.category || '通用' }}】{{ row.code }}</span><strong>{{ row.name }}</strong></div>
             <div v-if="row.variants?.length" class="catalog-specs"><button v-if="row.package_conversion_enabled" type="button" class="parent-sku-button" :class="{ active: row.active_variant_index === -1 }" @click="selectParent(row)">成套采购</button><button v-for="(variant,index) in row.variants" :key="variant.id || index" type="button" :class="{ active: row.active_variant_index === index }" @click="selectVariant(row,index)">{{ variantLabel(variant) }}</button></div>
-            <div class="catalog-selected"><span>已选：{{ activeCatalogItem(row).label }}</span><span>库存 {{ activeCatalogItem(row).stock }} {{ activeCatalogItem(row).unit }}</span></div>
+            <div class="catalog-selected"><span>已选：{{ activeCatalogItem(row).label }}</span><span>{{ activeVariant(row) ? '规格编码' : '商品编码' }} {{ activeCatalogItem(row).code }}</span><span>库存 {{ activeCatalogItem(row).stock }} {{ activeCatalogItem(row).unit }}</span></div>
             <div class="catalog-actions"><el-button type="success" :icon="Edit" @click="openEdit(row)">编辑</el-button><el-button type="success" plain @click="openStock(row)">查看库存</el-button><el-button v-if="canDeleteProduct" link type="danger" :icon="Delete" @click="remove(row)">删除</el-button></div>
           </div>
         </article>
@@ -457,7 +492,7 @@ onMounted(() => {
                 </div>
               </el-form-item>
               <el-form-item label="商品名称" required><el-input v-model="form.name" placeholder="例如：小绿萝" /></el-form-item>
-              <el-form-item label="商品编码" required><el-input v-model="form.code" /></el-form-item>
+              <el-form-item label="商品编码" required><el-input v-model="form.code" @change="refreshVariantCodes" /><div class="field-help">自动按当天生成，例如 SP-202608201、SP-202608202</div></el-form-item>
               <el-form-item v-if="!form.package_conversion_enabled" label="商品单位" class="basic-left"><el-select v-model="form.unit" filterable allow-create style="width:100%"><el-option v-for="item in unitOptions" :key="item" :label="item" :value="item" /></el-select><div class="field-help">普通商品的库存、项目和出库统一使用此单位</div></el-form-item>
               <el-form-item v-else label="整套采购单位" required class="basic-left"><el-select v-model="form.purchase_unit" filterable allow-create style="width:100%"><el-option v-for="item in unitOptions" :key="item" :label="item" :value="item" /></el-select><div class="field-help">套盆一般选“套”，每套包含下方的大号、中号、小号</div></el-form-item>
               <el-form-item label="必须成套采购" class="basic-right"><div class="bundle-switch"><el-switch v-model="form.package_conversion_enabled" @change="handleBundlePurchaseChange" /><span>{{ form.package_conversion_enabled ? '已开启：需要其中一个型号时，也必须采购整套大/中/小' : '未开启：各规格可分开采购' }}</span></div></el-form-item>

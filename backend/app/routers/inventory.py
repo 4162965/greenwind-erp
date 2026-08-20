@@ -236,7 +236,13 @@ def list_inventory(
     filters = []
     if keyword.strip():
         pattern = f"%{keyword.strip()}%"
-        filters.append(or_(Product.name.like(pattern), Product.code.like(pattern), Product.category.like(pattern)))
+        variant_product_ids = select(ProductVariant.product_id).where(
+            or_(
+                ProductVariant.code.like(pattern),
+                ProductVariant.specification.like(pattern),
+            )
+        )
+        filters.append(or_(Product.name.like(pattern), Product.code.like(pattern), Product.category.like(pattern), Product.id.in_(variant_product_ids)))
 
     products = db.scalars(select(Product).where(*filters).order_by(Product.category, Product.name, Product.id)).all()
     items = []
@@ -253,6 +259,7 @@ def list_inventory(
                     "product_id": product.id,
                     "variant_id": None,
                     "product_code": product.code,
+                    "variant_code": "",
                     "product_name": product.name,
                     "category": product.category,
                     "specification": "成套采购",
@@ -270,6 +277,7 @@ def list_inventory(
                         "product_id": product.id,
                         "variant_id": variant.id,
                         "product_code": product.code,
+                        "variant_code": variant.code,
                         "product_name": product.name,
                         "category": product.category,
                         "specification": variant_label(variant),
@@ -286,6 +294,7 @@ def list_inventory(
                     "product_id": product.id,
                     "variant_id": None,
                     "product_code": product.code,
+                    "variant_code": "",
                     "product_name": product.name,
                     "category": product.category,
                     "specification": product.specification or "默认",

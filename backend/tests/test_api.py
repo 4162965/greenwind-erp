@@ -126,6 +126,40 @@ def test_product_crud():
     assert deleted.status_code == 204
 
 
+def test_product_and_variant_code_suggestions_and_inventory_variant_code_search():
+    headers = auth_headers()
+    prefix = f"SP-{date.today().strftime('%Y%m%d')}"
+    first = client.get("/api/v1/products/next-code", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["code"].startswith(prefix)
+
+    product = client.post(
+        "/api/v1/products",
+        headers=headers,
+        json={"code": first.json()["code"], "name": "编码测试绿萝", "category": "植物", "unit": "盆", "purchase_unit": "盆"},
+    ).json()
+    second = client.get("/api/v1/products/next-code", headers=headers)
+    assert second.status_code == 200
+    assert second.json()["code"] == f"{prefix}{int(product['code'].replace(prefix, '')) + 1}"
+
+    variant_code = client.get(f"/api/v1/products/{product['id']}/variants/next-code", headers=headers)
+    assert variant_code.status_code == 200
+    assert variant_code.json()["code"] == f"{product['code']}-1"
+    variant = client.post(
+        f"/api/v1/products/{product['id']}/variants",
+        headers=headers,
+        json={"code": variant_code.json()["code"], "specification": "180#", "unit": "盆", "stock": 3},
+    ).json()
+    next_variant_code = client.get(f"/api/v1/products/{product['id']}/variants/next-code", headers=headers)
+    assert next_variant_code.json()["code"] == f"{product['code']}-2"
+
+    inventory = client.get(f"/api/v1/inventory?keyword={variant['code']}", headers=headers)
+    assert inventory.status_code == 200
+    assert inventory.json()["total"] == 1
+    assert inventory.json()["items"][0]["variant_code"] == variant["code"]
+    client.delete(f"/api/v1/products/{product['id']}", headers=headers)
+
+
 def test_purchase_receive_updates_variant_stock_and_price():
     headers = auth_headers()
     product = client.post(

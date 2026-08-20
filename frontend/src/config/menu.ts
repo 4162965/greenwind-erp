@@ -42,6 +42,7 @@ export const permissionOptions = [
 
 export const menuItems: MenuItem[] = [
   { label: '首页工作台', path: '/', icon: House, permission: 'dashboard' },
+  { label: '商品管理', path: '/goods', icon: Goods, permission: 'goods' },
   {
     label: '订单管理',
     icon: ShoppingCart,
@@ -97,7 +98,6 @@ export const menuItems: MenuItem[] = [
     children: [
       { label: '客户资料', path: '/customers', permission: 'customers' },
       { label: '项目资料', path: '/projects', permission: 'projects' },
-      { label: '商品资料', path: '/goods', permission: 'goods' },
       { label: '员工资料', path: '/staff', permission: 'staff' },
       { label: '资料附件', path: '/module/operation/attachments', permission: 'dashboard' },
     ],

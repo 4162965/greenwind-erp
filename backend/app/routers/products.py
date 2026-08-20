@@ -1,3 +1,6 @@
+import re
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -45,6 +48,36 @@ def get_product(product_id: int, db: Session) -> Product:
     if not product:
         raise HTTPException(status_code=404, detail="商品不存在")
     return product
+
+
+def next_product_code(db: Session) -> str:
+    prefix = f"SP-{date.today().strftime('%Y%m%d')}"
+    codes = db.scalars(select(Product.code).where(Product.code.like(f"{prefix}%"))).all()
+    max_no = 0
+    for code in codes:
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d+)", str(code or ""))
+        if match:
+            max_no = max(max_no, int(match.group(1)))
+    return f"{prefix}{max_no + 1}"
+
+
+def next_variant_code(product: Product, db: Session) -> str:
+    prefix = f"{product.code}-"
+    codes = db.scalars(select(ProductVariant.code).where(ProductVariant.product_id == product.id, ProductVariant.code.like(f"{prefix}%"))).all()
+    max_no = 0
+    for code in codes:
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d+)", str(code or ""))
+        if match:
+            max_no = max(max_no, int(match.group(1)))
+    return f"{prefix}{max_no + 1}"
+
+
+@router.get("/next-code")
+def suggest_product_code(
+    db: Session = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    return {"code": next_product_code(db)}
 
 
 @router.get("")
@@ -120,6 +153,16 @@ def create_product(
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.get("/{product_id}/variants/next-code")
+def suggest_variant_code(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    product = get_product(product_id, db)
+    return {"code": next_variant_code(product, db)}
 
 
 @router.get("/{product_id}/variants")

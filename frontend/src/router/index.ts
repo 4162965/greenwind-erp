@@ -135,7 +135,7 @@ const routes = [
         { label: '确认入库', type: 'success', endpoint: '/purchases/{id}/receive', confirm: '确认采购货品已入库吗？' },
       ] } },
       { path: 'module/inventory/check', name: 'inventory-check', component: BasicListView, meta: { title: title.inventory, endpoint: '/inventory', permission: 'purchase_inventory', columns: [
-        { prop: 'product_code', label: '商品编码', width: 130 }, { prop: 'product_name', label: '商品名称', minWidth: 170 }, { prop: 'category', label: '分类', width: 100 }, { prop: 'specification', label: '规格', minWidth: 160 }, { prop: 'unit', label: '单位', width: 80 }, { prop: 'stock', label: '库存', width: 100 }, { prop: 'reference_purchase_price', label: '最新采购价', width: 120 }, { prop: 'status', label: '状态', width: 90 },
+        { prop: 'variant_code', label: '规格编码', width: 160 }, { prop: 'product_code', label: '商品编码', width: 140 }, { prop: 'product_name', label: '商品名称', minWidth: 170 }, { prop: 'category', label: '分类', width: 100 }, { prop: 'specification', label: '规格', minWidth: 160 }, { prop: 'unit', label: '单位', width: 80 }, { prop: 'stock', label: '库存', width: 100 }, { prop: 'reference_purchase_price', label: '最新采购价', width: 120 }, { prop: 'status', label: '状态', width: 90 },
       ] } },
       { path: 'module/system/admins', name: 'system-users', component: BasicListView, meta: { title: title.systemUsers, endpoint: '/system/users', permission: 'system', canCreate: true, canEdit: true, columns: [
         { prop: 'username', label: '账号', width: 140 }, { prop: 'display_name', label: '姓名', width: 120 }, { prop: 'role', label: '角色', width: 100 }, { prop: 'is_active', label: '启用', width: 80 }, { prop: 'module_permissions', label: '模块权限', minWidth: 220 }, { prop: 'product_category_permissions', label: '商品分类权限', minWidth: 220 },
