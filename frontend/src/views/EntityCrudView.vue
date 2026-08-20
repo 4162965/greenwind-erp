@@ -22,6 +22,15 @@ interface FieldConfig {
   placeholder?: string
 }
 
+interface EntityConfig {
+  title: string
+  eyebrow: string
+  singular: string
+  endpoint: string
+  description: string
+  fields: FieldConfig[]
+}
+
 const modulePermissionOptions = [
   { label: '首页工作台', value: 'dashboard' },
   { label: '商品管理', value: 'goods' },
@@ -43,7 +52,7 @@ const employeeStatusOptions = ['在职', '停用', '离职']
 const defaultPositions = ['经理', '主管', '客服', '养护员', '司机', '跟车配送', '采购', '仓管', '财务', '市场']
 const defaultDepartments = ['市场部', '绿化部', '财务部', '采购部', '仓管部', '配送部', '客服部', '管理层', '其他']
 
-const configs = {
+const configs: Record<EntityKind, EntityConfig> = {
   customer: {
     title: '客户管理',
     eyebrow: 'CUSTOMERS',
@@ -63,7 +72,7 @@ const configs = {
       { key: 'maintainer_name', label: '养护员', table: true, width: 110 },
       { key: 'maintainer_phone', label: '养护员电话', table: true, width: 130 },
       { key: 'status', label: '状态', type: 'select', options: statusOptions, default: '启用', table: true, width: 90 },
-    ] satisfies FieldConfig[],
+    ],
   },
   employee: {
     title: '员工管理',
@@ -84,7 +93,7 @@ const configs = {
       { key: 'product_category_permissions', label: '商品分类权限', type: 'multi-select', options: [], table: false },
       { key: 'responsibility', label: '负责项目/说明', type: 'textarea', table: false },
       { key: 'status', label: '状态', type: 'select', options: employeeStatusOptions, default: '在职', table: true, width: 90 },
-    ] satisfies FieldConfig[],
+    ],
   },
 }
 
