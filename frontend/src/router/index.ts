@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
+import MobileLoginView from '../views/mobile/MobileLoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import MyWorkbenchView from '../views/MyWorkbenchView.vue'
 import MobileLayout from '../layouts/MobileLayout.vue'
@@ -30,6 +31,7 @@ import OperationCenterView from '../views/OperationCenterView.vue'
 import OperationLogsView from '../views/OperationLogsView.vue'
 import ForbiddenView from '../views/ForbiddenView.vue'
 import AppLayout from '../layouts/AppLayout.vue'
+import { useAuthStore } from '../stores/auth'
 
 const title = {
   dashboard: '首页工作台',
@@ -69,9 +71,11 @@ const modulePermissionOptions = ['dashboard', 'orders', 'purchase_inventory', 'c
 
 const routes = [
   { path: '/login', component: LoginView, meta: { public: true } },
+  { path: '/mobile/login', component: MobileLoginView, meta: { public: true, mobile: true, title: '移动端登录' } },
   {
     path: '/mobile',
     component: MobileLayout,
+    meta: { mobile: true },
     children: [
       { path: '', name: 'mobile-home', component: MobileHomeView, meta: { title: '移动首页', mobile: true } },
       { path: 'order/new', name: 'mobile-order-new', component: MobileOrderCreateView, meta: { title: '手机下单', mobile: true } },
@@ -293,10 +297,8 @@ const routes = [
 const router = createRouter({ history: createWebHistory(), routes })
 const fullRoles = ['admin', '管理员', '经理', '老板']
 
-function canAccess(permission: unknown) {
+function canAccess(permission: unknown, user: Record<string, any> | null) {
   if (!permission) return true
-  const saved = localStorage.getItem('greenwind_user')
-  const user = saved ? JSON.parse(saved) : null
   const roles = String(user?.role || '').replace('，', ',').split(',').map((item) => item.trim()).filter(Boolean)
   if (roles.some((role) => fullRoles.includes(role))) return true
   const permissions = Array.isArray(user?.module_permissions) ? user.module_permissions : []
@@ -305,10 +307,15 @@ function canAccess(permission: unknown) {
 }
 
 router.beforeEach((to) => {
-  const token = localStorage.getItem('greenwind_token')
-  if (!to.meta.public && !token) return '/login'
-  if (to.path === '/login' && token) return '/'
-  if (to.name !== 'forbidden' && !canAccess(to.meta.permission)) return '/403'
+  const mobile = to.path.startsWith('/mobile') || to.matched.some((record) => Boolean(record.meta.mobile))
+  const auth = useAuthStore()
+  auth.activateScope(mobile ? 'mobile' : 'desktop')
+  if (!to.meta.public && !auth.token) {
+    return { path: mobile ? '/mobile/login' : '/login', query: { redirect: to.fullPath } }
+  }
+  if (to.path === '/mobile/login' && auth.token) return '/mobile'
+  if (to.path === '/login' && auth.token) return '/'
+  if (!mobile && to.name !== 'forbidden' && !canAccess(to.meta.permission, auth.user)) return '/403'
 })
 
 export default router

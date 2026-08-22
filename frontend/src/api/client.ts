@@ -15,8 +15,15 @@ export const api = axios.create({
   timeout: 15000,
 })
 
+function currentSession() {
+  const mobile = window.location.pathname.startsWith('/mobile')
+  return mobile
+    ? { tokenKey: 'greenwind_mobile_token', userKey: 'greenwind_mobile_user', loginPath: '/mobile/login' }
+    : { tokenKey: 'greenwind_token', userKey: 'greenwind_user', loginPath: '/login' }
+}
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('greenwind_token')
+  const token = localStorage.getItem(currentSession().tokenKey)
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -25,9 +32,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
-      localStorage.removeItem('greenwind_token')
-      localStorage.removeItem('greenwind_user')
-      window.location.href = '/login'
+      const session = currentSession()
+      localStorage.removeItem(session.tokenKey)
+      localStorage.removeItem(session.userKey)
+      window.location.href = session.loginPath
     }
     return Promise.reject(error)
   },

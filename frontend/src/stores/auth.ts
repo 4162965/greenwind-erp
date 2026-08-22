@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '../api/client'
 
+export type AuthScope = 'desktop' | 'mobile'
+
 export interface UserInfo {
   id: number
   username: string
@@ -12,17 +14,43 @@ export interface UserInfo {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(localStorage.getItem('greenwind_token') || '')
-  const saved = localStorage.getItem('greenwind_user')
-  const user = ref<UserInfo | null>(saved ? JSON.parse(saved) : null)
+  const initialScope: AuthScope = window.location.pathname.startsWith('/mobile') ? 'mobile' : 'desktop'
+  const activeScope = ref<AuthScope>(initialScope)
+  const token = ref('')
+  const user = ref<UserInfo | null>(null)
   const isLoggedIn = computed(() => Boolean(token.value))
 
-  async function login(username: string, password: string) {
+  function storageKeys(scope: AuthScope) {
+    return scope === 'mobile'
+      ? { token: 'greenwind_mobile_token', user: 'greenwind_mobile_user' }
+      : { token: 'greenwind_token', user: 'greenwind_user' }
+  }
+
+  function readUser(key: string) {
+    try {
+      const saved = localStorage.getItem(key)
+      return saved ? JSON.parse(saved) as UserInfo : null
+    } catch {
+      localStorage.removeItem(key)
+      return null
+    }
+  }
+
+  function activateScope(scope: AuthScope) {
+    activeScope.value = scope
+    const keys = storageKeys(scope)
+    token.value = localStorage.getItem(keys.token) || ''
+    user.value = readUser(keys.user)
+  }
+
+  async function login(username: string, password: string, scope: AuthScope = activeScope.value) {
+    activateScope(scope)
     const { data } = await api.post('/auth/login', { username, password })
     token.value = data.access_token
     user.value = data.user
-    localStorage.setItem('greenwind_token', token.value)
-    localStorage.setItem('greenwind_user', JSON.stringify(user.value))
+    const keys = storageKeys(scope)
+    localStorage.setItem(keys.token, token.value)
+    localStorage.setItem(keys.user, JSON.stringify(user.value))
   }
 
   async function changePassword(oldPassword: string, newPassword: string) {
@@ -32,12 +60,17 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
-  function logout() {
-    token.value = ''
-    user.value = null
-    localStorage.removeItem('greenwind_token')
-    localStorage.removeItem('greenwind_user')
+  function logout(scope: AuthScope = activeScope.value) {
+    const keys = storageKeys(scope)
+    localStorage.removeItem(keys.token)
+    localStorage.removeItem(keys.user)
+    if (scope === activeScope.value) {
+      token.value = ''
+      user.value = null
+    }
   }
 
-  return { token, user, isLoggedIn, login, changePassword, logout }
+  activateScope(initialScope)
+
+  return { activeScope, token, user, isLoggedIn, activateScope, login, changePassword, logout }
 })

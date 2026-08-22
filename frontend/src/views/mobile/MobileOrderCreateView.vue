@@ -4,10 +4,12 @@ import { ArrowLeft, Check, Plus, Refresh, Remove } from '@element-plus/icons-vue
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { api } from '../../api/client'
+import { useAuthStore } from '../../stores/auth'
 
 type Row = Record<string, any>
 
 const router = useRouter()
+const auth = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const projects = ref<Row[]>([])
@@ -139,7 +141,7 @@ async function submit() {
       project_id: form.project_id,
       project_name: project?.name || '',
       customer_name: form.customer_name || project?.customer_name || project?.name || '',
-      requester: JSON.parse(localStorage.getItem('greenwind_user') || '{}')?.display_name || '手机端',
+      requester: auth.user?.display_name || '手机端',
       contact_phone: form.contact_phone || '',
       order_date: new Date().toISOString().slice(0, 10),
       expected_date: form.expected_date || null,

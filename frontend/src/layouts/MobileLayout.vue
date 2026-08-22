@@ -31,8 +31,8 @@ function go(path: string) {
 }
 
 function logout() {
-  auth.logout()
-  router.push('/login')
+  auth.logout('mobile')
+  router.push('/mobile/login')
 }
 
 function resetPasswordForm() {
