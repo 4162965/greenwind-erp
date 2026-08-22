@@ -1,10 +1,26 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import Attachment, BusinessOrder, Employee, InventoryMovement, Product, ProductVariant, PurchaseOrder, PurchaseOrderItem, User
+from ..models import (
+    Attachment,
+    BusinessOrder,
+    Employee,
+    InventoryMovement,
+    Product,
+    ProductVariant,
+    Project,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseReceipt,
+    PurchaseReceiptAllocation,
+    PurchaseReceiptItem,
+    User,
+)
 from ..permissions import employee_for_user
 from ..schemas import PurchaseOrderCreate, PurchaseOrderItemRead, PurchaseOrderRead, PurchaseOrderUpdate
 
@@ -66,6 +82,14 @@ def linked_business_order(order: PurchaseOrder, db: Session) -> BusinessOrder | 
     if not source:
         return None
     return db.scalar(select(BusinessOrder).where(BusinessOrder.order_no == source))
+
+
+def parse_date(value, default=None):
+    if not value:
+        return default
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
 
 
 def sync_business_order_from_purchase(order: PurchaseOrder, db: Session):
@@ -152,6 +176,90 @@ def normalize_item_names(item: PurchaseOrderItem, db: Session):
         item.unit = item.unit or product.purchase_unit or product.unit
 
 
+def variant_label(variant: ProductVariant) -> str:
+    return variant.specification or variant.code
+
+
+def normalize_receipt_item(item: PurchaseReceiptItem, db: Session):
+    product = db.get(Product, item.product_id)
+    if not product:
+        raise HTTPException(status_code=400, detail="商品不存在")
+    item.product_name = item.product_name or product.name
+    if item.variant_id:
+        variant = db.get(ProductVariant, item.variant_id)
+        if not variant or variant.product_id != product.id:
+            raise HTTPException(status_code=400, detail="商品规格不存在")
+        item.variant_name = item.variant_name or variant_label(variant)
+        item.unit = item.unit or variant.unit or product.unit
+    else:
+        item.unit = item.unit or product.purchase_unit or product.unit
+
+
+def refresh_receipt_status(receipt: PurchaseReceipt, db: Session):
+    available = db.scalar(
+        select(func.coalesce(func.sum(PurchaseReceiptItem.available_quantity), 0))
+        .where(PurchaseReceiptItem.receipt_id == receipt.id)
+    ) or 0
+    receipt.status = "有未安排" if float(available or 0) > 0 else "已全部分配"
+
+
+def serialize_receipt(receipt: PurchaseReceipt, db: Session):
+    items = db.scalars(select(PurchaseReceiptItem).where(PurchaseReceiptItem.receipt_id == receipt.id).order_by(PurchaseReceiptItem.id)).all()
+    allocations = db.scalars(
+        select(PurchaseReceiptAllocation)
+        .where(PurchaseReceiptAllocation.receipt_id == receipt.id)
+        .order_by(PurchaseReceiptAllocation.id)
+    ).all()
+    allocation_map: dict[int, list[PurchaseReceiptAllocation]] = {}
+    for allocation in allocations:
+        allocation_map.setdefault(allocation.receipt_item_id, []).append(allocation)
+    return {
+        "id": receipt.id,
+        "receipt_no": receipt.receipt_no,
+        "supplier": receipt.supplier,
+        "purchaser": receipt.purchaser,
+        "receipt_date": receipt.receipt_date.isoformat() if receipt.receipt_date else None,
+        "source_purchase_no": receipt.source_purchase_no,
+        "status": receipt.status,
+        "notes": receipt.notes,
+        "created_by": receipt.created_by,
+        "created_at": receipt.created_at.isoformat() if receipt.created_at else "",
+        "items": [
+            {
+                "id": item.id,
+                "receipt_id": item.receipt_id,
+                "product_id": item.product_id,
+                "variant_id": item.variant_id,
+                "product_name": item.product_name,
+                "variant_name": item.variant_name,
+                "total_quantity": float(item.total_quantity or 0),
+                "available_quantity": float(item.available_quantity or 0),
+                "unit": item.unit,
+                "unit_price": float(item.unit_price or 0),
+                "total_amount": float(item.total_quantity or 0) * float(item.unit_price or 0),
+                "notes": item.notes,
+                "allocations": [
+                    {
+                        "id": allocation.id,
+                        "project_id": allocation.project_id,
+                        "project_name": allocation.project_name,
+                        "business_order_id": allocation.business_order_id,
+                        "business_order_no": allocation.business_order_no,
+                        "quantity": float(allocation.quantity or 0),
+                        "unit_price": float(allocation.unit_price or 0),
+                        "total_amount": float(allocation.total_amount or 0),
+                        "allocation_type": allocation.allocation_type,
+                        "operator": allocation.operator,
+                        "notes": allocation.notes,
+                    }
+                    for allocation in allocation_map.get(item.id, [])
+                ],
+            }
+            for item in items
+        ],
+    }
+
+
 def bundle_complete_stock(product: Product, db: Session) -> float:
     variants = db.scalars(select(ProductVariant).where(ProductVariant.product_id == product.id)).all()
     enabled_variants = [variant for variant in variants if (variant.conversion_quantity or 0) > 0]
@@ -218,6 +326,127 @@ def receive_bundle_item(order: PurchaseOrder, item: PurchaseOrderItem, product: 
             notes=(f"由型号 {triggered_variant_name} 触发整套采购；" if triggered_variant_name else "") + (item.notes or ""),
         )
     )
+
+
+@router.get("/receipts")
+def list_receipts(
+    keyword: str = Query(default="", max_length=100),
+    unassigned_only: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(current_user),
+):
+    filters = []
+    if keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        item_receipt_ids = select(PurchaseReceiptItem.receipt_id).where(
+            or_(
+                PurchaseReceiptItem.product_name.like(pattern),
+                PurchaseReceiptItem.variant_name.like(pattern),
+            )
+        )
+        filters.append(
+            or_(
+                PurchaseReceipt.receipt_no.like(pattern),
+                PurchaseReceipt.supplier.like(pattern),
+                PurchaseReceipt.purchaser.like(pattern),
+                PurchaseReceipt.source_purchase_no.like(pattern),
+                PurchaseReceipt.id.in_(item_receipt_ids),
+            )
+        )
+    if unassigned_only:
+        receipt_ids = select(PurchaseReceiptItem.receipt_id).where(PurchaseReceiptItem.available_quantity > 0)
+        filters.append(PurchaseReceipt.id.in_(receipt_ids))
+    receipts = db.scalars(select(PurchaseReceipt).where(*filters).order_by(PurchaseReceipt.receipt_date.desc(), PurchaseReceipt.id.desc())).all()
+    total = db.scalar(select(func.count()).select_from(PurchaseReceipt).where(*filters)) or 0
+    return {"items": [serialize_receipt(receipt, db) for receipt in receipts], "total": total}
+
+
+@router.post("/receipts", status_code=status.HTTP_201_CREATED)
+def create_receipt(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    items_payload = payload.get("items") or []
+    if not isinstance(items_payload, list) or not items_payload:
+        raise HTTPException(status_code=400, detail="请录入收据货品明细")
+    receipt = PurchaseReceipt(
+        receipt_no=str(payload.get("receipt_no") or f"RJ-{date.today().strftime('%Y%m%d')}-{(db.scalar(select(func.count()).select_from(PurchaseReceipt)) or 0) + 1:04d}")[:64],
+        supplier=str(payload.get("supplier") or ""),
+        purchaser=str(payload.get("purchaser") or default_purchaser(db, user)),
+        receipt_date=parse_date(payload.get("receipt_date"), date.today()),
+        source_purchase_no=str(payload.get("source_purchase_no") or ""),
+        notes=str(payload.get("notes") or ""),
+        created_by=user.display_name or user.username,
+    )
+    db.add(receipt)
+    db.flush()
+    operator = user.display_name or user.username
+    for entry in items_payload:
+        quantity = float(entry.get("quantity") or entry.get("total_quantity") or 0)
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="收据货品数量必须大于0")
+        item = PurchaseReceiptItem(
+            receipt_id=receipt.id,
+            product_id=int(entry.get("product_id") or 0),
+            variant_id=int(entry["variant_id"]) if entry.get("variant_id") else None,
+            product_name=str(entry.get("product_name") or ""),
+            variant_name=str(entry.get("variant_name") or ""),
+            total_quantity=quantity,
+            available_quantity=quantity,
+            unit=str(entry.get("unit") or ""),
+            unit_price=float(entry.get("unit_price") or 0),
+            notes=str(entry.get("notes") or ""),
+        )
+        normalize_receipt_item(item, db)
+        db.add(item)
+        db.flush()
+        for allocation_entry in entry.get("allocations") or []:
+            allocation_quantity = float(allocation_entry.get("quantity") or 0)
+            if allocation_quantity <= 0:
+                continue
+            if allocation_quantity > float(item.available_quantity or 0):
+                raise HTTPException(status_code=400, detail=f"{item.product_name} {item.variant_name} 分配数量超过收据余量")
+            project_id = int(allocation_entry["project_id"]) if allocation_entry.get("project_id") else None
+            project_name = str(allocation_entry.get("project_name") or "")
+            if project_id:
+                project = db.get(Project, project_id)
+                if not project:
+                    raise HTTPException(status_code=400, detail="项目不存在")
+                project_name = project_name or project.name
+            business_order_id = int(allocation_entry["business_order_id"]) if allocation_entry.get("business_order_id") else None
+            business_order_no = str(allocation_entry.get("business_order_no") or "")
+            if business_order_id:
+                business = db.get(BusinessOrder, business_order_id)
+                if not business:
+                    raise HTTPException(status_code=400, detail="订单不存在")
+                business_order_no = business_order_no or business.order_no
+                project_id = project_id or business.project_id
+                project_name = project_name or business.project_name
+            item.available_quantity = float(item.available_quantity or 0) - allocation_quantity
+            db.add(
+                PurchaseReceiptAllocation(
+                    receipt_item_id=item.id,
+                    receipt_id=receipt.id,
+                    product_id=item.product_id,
+                    variant_id=item.variant_id,
+                    project_id=project_id,
+                    project_name=project_name,
+                    business_order_id=business_order_id,
+                    business_order_no=business_order_no,
+                    quantity=allocation_quantity,
+                    unit=item.unit,
+                    unit_price=float(item.unit_price or 0),
+                    total_amount=allocation_quantity * float(item.unit_price or 0),
+                    allocation_type="manual",
+                    operator=operator,
+                    notes=str(allocation_entry.get("notes") or ""),
+                )
+            )
+    refresh_receipt_status(receipt, db)
+    db.commit()
+    db.refresh(receipt)
+    return serialize_receipt(receipt, db)
 
 
 @router.get("")
@@ -419,55 +648,68 @@ def receive_order(
     items = db.scalars(select(PurchaseOrderItem).where(PurchaseOrderItem.order_id == order_id)).all()
     if not items:
         raise HTTPException(status_code=400, detail="采购单没有明细")
-    for item in items:
-        received_quantity = item.received_quantity or item.quantity
-        item.received_quantity = received_quantity
-        product = db.get(Product, item.product_id)
-        if not product:
-            raise HTTPException(status_code=400, detail="采购明细商品不存在")
-        if product.package_conversion_enabled:
-            receive_bundle_item(order, item, product, db)
-            continue
-        if item.variant_id:
-            variant = db.get(ProductVariant, item.variant_id)
-            if not variant:
+    existing_receipt = db.scalar(select(PurchaseReceipt).where(PurchaseReceipt.source_purchase_no == order.order_no).order_by(PurchaseReceipt.id))
+    if not existing_receipt:
+        receipt = PurchaseReceipt(
+            receipt_no=f"RJ-{date.today().strftime('%Y%m%d')}-{(db.scalar(select(func.count()).select_from(PurchaseReceipt)) or 0) + 1:04d}",
+            supplier=order.supplier,
+            purchaser=order.purchaser or default_purchaser(db, user),
+            receipt_date=order.purchase_date or date.today(),
+            source_purchase_no=order.order_no,
+            notes=order.notes,
+            created_by=user.display_name or user.username,
+        )
+        db.add(receipt)
+        db.flush()
+        for item in items:
+            received_quantity = float(item.received_quantity or item.quantity or 0)
+            item.received_quantity = received_quantity
+            product = db.get(Product, item.product_id)
+            if not product:
+                raise HTTPException(status_code=400, detail="采购明细商品不存在")
+            variant = db.get(ProductVariant, item.variant_id) if item.variant_id else None
+            if item.variant_id and not variant:
                 raise HTTPException(status_code=400, detail="采购明细规格不存在")
-            before_stock = float(variant.stock or 0)
-            variant.stock = float(variant.stock or 0) + received_quantity
-            variant.reference_purchase_price = item.unit_price
-            if not product.package_conversion_enabled:
-                product.stock = int(sum(v.stock or 0 for v in db.scalars(select(ProductVariant).where(ProductVariant.product_id == product.id)).all()))
             product.reference_purchase_price = item.unit_price
-            after_stock = float(variant.stock or 0)
-            unit = variant.unit or item.unit
-            variant_name = item.variant_name or variant.specification or variant.code
-        else:
-            before_stock = float(product.stock or 0)
-            product.stock = int((product.stock or 0) + received_quantity)
-            product.reference_purchase_price = item.unit_price
-            after_stock = float(product.stock or 0)
-            unit = item.unit or product.purchase_unit or product.unit
-            variant_name = ""
-        db.add(
-            InventoryMovement(
+            if variant:
+                variant.reference_purchase_price = item.unit_price
+            unit = (variant.unit if variant else "") or item.unit or product.purchase_unit or product.unit
+            variant_name = item.variant_name or (variant.specification or variant.code if variant else "")
+            receipt_item = PurchaseReceiptItem(
+                receipt_id=receipt.id,
                 product_id=product.id,
                 variant_id=item.variant_id,
                 product_name=item.product_name or product.name,
                 variant_name=variant_name,
-                movement_type="采购入库",
-                direction="入库",
-                quantity=received_quantity,
-                before_stock=before_stock,
-                after_stock=after_stock,
+                total_quantity=received_quantity,
+                available_quantity=received_quantity,
                 unit=unit,
                 unit_price=item.unit_price,
-                total_amount=received_quantity * item.unit_price,
-                source_type="采购单",
-                source_no=order.order_no,
-                operator=order.purchaser,
                 notes=item.notes,
             )
-        )
+            normalize_receipt_item(receipt_item, db)
+            db.add(receipt_item)
+            db.add(
+                InventoryMovement(
+                    product_id=product.id,
+                    variant_id=item.variant_id,
+                    product_name=receipt_item.product_name,
+                    variant_name=receipt_item.variant_name,
+                    movement_type="收据入库",
+                    direction="入库",
+                    quantity=received_quantity,
+                    before_stock=0,
+                    after_stock=received_quantity,
+                    unit=receipt_item.unit,
+                    unit_price=item.unit_price,
+                    total_amount=received_quantity * item.unit_price,
+                    source_type="采购收据",
+                    source_no=receipt.receipt_no,
+                    operator=order.purchaser,
+                    notes=item.notes,
+                )
+            )
+        refresh_receipt_status(receipt, db)
     order.status = "已入库"
     sync_business_order_from_purchase(order, db)
     db.commit()

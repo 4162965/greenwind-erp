@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import BusinessOrder, InventoryMovement, OutboundOrder, OutboundOrderItem, Product, ProductVariant, User
+from ..models import BusinessOrder, InventoryMovement, OutboundOrder, OutboundOrderItem, Product, ProductVariant, Project, PurchaseReceipt, PurchaseReceiptAllocation, PurchaseReceiptItem, User
 
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
@@ -95,6 +95,14 @@ def serialize_outbound(order: OutboundOrder, db: Session):
             for item in items
         ],
     }
+
+
+def refresh_receipt_status(receipt: PurchaseReceipt, db: Session):
+    available = db.scalar(
+        select(func.sum(PurchaseReceiptItem.available_quantity))
+        .where(PurchaseReceiptItem.receipt_id == receipt.id)
+    )
+    receipt.status = "有未安排" if float(available or 0) > 0 else "已全部分配"
 
 
 def normalize_outbound_item(item: OutboundOrderItem, db: Session):
@@ -233,6 +241,62 @@ def list_inventory(
     db: Session = Depends(get_db),
     _: User = Depends(current_user),
 ):
+    receipt_filters = [PurchaseReceiptItem.available_quantity > 0]
+    if keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        receipt_ids = select(PurchaseReceipt.id).where(
+            or_(
+                PurchaseReceipt.receipt_no.like(pattern),
+                PurchaseReceipt.supplier.like(pattern),
+                PurchaseReceipt.purchaser.like(pattern),
+            )
+        )
+        receipt_filters.append(
+            or_(
+                PurchaseReceiptItem.product_name.like(pattern),
+                PurchaseReceiptItem.variant_name.like(pattern),
+                PurchaseReceiptItem.receipt_id.in_(receipt_ids),
+            )
+        )
+    receipt_items = db.scalars(
+        select(PurchaseReceiptItem)
+        .where(*receipt_filters)
+        .order_by(PurchaseReceiptItem.created_at.asc(), PurchaseReceiptItem.id.asc())
+    ).all()
+    items = []
+    for row in receipt_items:
+        receipt = db.get(PurchaseReceipt, row.receipt_id)
+        product = db.get(Product, row.product_id)
+        variant = db.get(ProductVariant, row.variant_id) if row.variant_id else None
+        stock = float(row.available_quantity or 0)
+        items.append(
+            {
+                "item_type": "receipt_balance",
+                "receipt_id": row.receipt_id,
+                "receipt_item_id": row.id,
+                "receipt_no": receipt.receipt_no if receipt else "",
+                "receipt_date": receipt.receipt_date.isoformat() if receipt and receipt.receipt_date else None,
+                "supplier": receipt.supplier if receipt else "",
+                "product_id": row.product_id,
+                "variant_id": row.variant_id,
+                "product_code": product.code if product else "",
+                "variant_code": variant.code if variant else "",
+                "product_name": row.product_name,
+                "category": product.category if product else "",
+                "specification": row.variant_name or (variant_label(variant) if variant else "默认"),
+                "unit": row.unit,
+                "stock": stock,
+                "available_quantity": stock,
+                "reference_purchase_price": float(row.unit_price or 0),
+                "unit_price": float(row.unit_price or 0),
+                "stock_value": stock * float(row.unit_price or 0),
+                "status": "未安排",
+            }
+        )
+    if low_stock_only:
+        items = [item for item in items if item["stock"] <= 0]
+    return {"items": items, "total": len(items)}
+
     filters = []
     if keyword.strip():
         pattern = f"%{keyword.strip()}%"
@@ -336,6 +400,105 @@ def list_movements(
     return {"items": [serialize_movement(row) for row in movements], "total": total}
 
 
+@router.post("/receipt-items/{receipt_item_id}/allocate")
+def allocate_receipt_item(
+    receipt_item_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    receipt_item = db.get(PurchaseReceiptItem, receipt_item_id)
+    if not receipt_item:
+        raise HTTPException(status_code=404, detail="收据余量不存在")
+    receipt = db.get(PurchaseReceipt, receipt_item.receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail="收据不存在")
+    quantity = float(payload.get("quantity") or 0)
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="分配数量必须大于0")
+    before_quantity = float(receipt_item.available_quantity or 0)
+    if quantity > before_quantity:
+        raise HTTPException(status_code=400, detail="分配数量不能超过未安排余量")
+
+    project_id = int(payload["project_id"]) if payload.get("project_id") else None
+    project_name = str(payload.get("project_name") or "").strip()
+    business_order_id = int(payload["business_order_id"]) if payload.get("business_order_id") else None
+    business_order_no = str(payload.get("business_order_no") or "").strip()
+
+    business = None
+    if business_order_id:
+        business = db.get(BusinessOrder, business_order_id)
+    elif business_order_no:
+        business = db.scalar(select(BusinessOrder).where(BusinessOrder.order_no == business_order_no))
+    if business:
+        business_order_id = business.id
+        business_order_no = business.order_no
+        project_id = project_id or business.project_id
+        project_name = project_name or business.project_name
+
+    project = None
+    if project_id:
+        project = db.get(Project, project_id)
+        if not project:
+            raise HTTPException(status_code=400, detail="项目不存在")
+    elif project_name:
+        project = db.scalar(select(Project).where(Project.name == project_name))
+    if project:
+        project_id = project.id
+        project_name = project.name
+    if not project_name and not business_order_no:
+        raise HTTPException(status_code=400, detail="请填写项目或订单去向")
+
+    receipt_item.available_quantity = before_quantity - quantity
+    allocation = PurchaseReceiptAllocation(
+        receipt_item_id=receipt_item.id,
+        receipt_id=receipt.id,
+        product_id=receipt_item.product_id,
+        variant_id=receipt_item.variant_id,
+        project_id=project_id,
+        project_name=project_name,
+        business_order_id=business_order_id,
+        business_order_no=business_order_no,
+        quantity=quantity,
+        unit=receipt_item.unit,
+        unit_price=float(receipt_item.unit_price or 0),
+        total_amount=quantity * float(receipt_item.unit_price or 0),
+        allocation_type="manual",
+        operator=user.display_name or user.username,
+        notes=str(payload.get("notes") or ""),
+    )
+    db.add(allocation)
+    db.add(
+        InventoryMovement(
+            product_id=receipt_item.product_id,
+            variant_id=receipt_item.variant_id,
+            product_name=receipt_item.product_name,
+            variant_name=receipt_item.variant_name,
+            movement_type="收据余量分配",
+            direction="出库",
+            quantity=quantity,
+            before_stock=before_quantity,
+            after_stock=float(receipt_item.available_quantity or 0),
+            unit=receipt_item.unit,
+            unit_price=float(receipt_item.unit_price or 0),
+            total_amount=quantity * float(receipt_item.unit_price or 0),
+            source_type="采购收据",
+            source_no=receipt.receipt_no,
+            operator=user.display_name or user.username,
+            notes=f"{project_name or business_order_no}；{payload.get('notes') or ''}".strip("；"),
+        )
+    )
+    refresh_receipt_status(receipt, db)
+    db.commit()
+    return {
+        "status": "allocated",
+        "receipt_item_id": receipt_item.id,
+        "allocated_quantity": quantity,
+        "available_quantity": float(receipt_item.available_quantity or 0),
+        "allocation_id": allocation.id,
+    }
+
+
 @router.get("/outbound-orders")
 def list_outbound_orders(
     keyword: str = Query(default="", max_length=100),
@@ -425,6 +588,52 @@ def adjust_inventory(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
+    receipt_item_id = payload.get("receipt_item_id")
+    if receipt_item_id:
+        receipt_item = db.get(PurchaseReceiptItem, int(receipt_item_id))
+        if not receipt_item:
+            raise HTTPException(status_code=404, detail="收据余量不存在")
+        new_stock = float(payload.get("new_stock") or payload.get("available_quantity") or 0)
+        if new_stock < 0:
+            raise HTTPException(status_code=400, detail="库存不能小于0")
+        before_stock = float(receipt_item.available_quantity or 0)
+        receipt_item.available_quantity = new_stock
+        difference = new_stock - before_stock
+        receipt = db.get(PurchaseReceipt, receipt_item.receipt_id)
+        if receipt:
+            receipt.status = "有未安排" if new_stock > 0 else "已全部分配"
+        db.add(
+            InventoryMovement(
+                product_id=receipt_item.product_id,
+                variant_id=receipt_item.variant_id,
+                product_name=receipt_item.product_name,
+                variant_name=receipt_item.variant_name,
+                movement_type="收据余量盘点",
+                direction="入库" if difference >= 0 else "出库",
+                quantity=abs(difference),
+                before_stock=before_stock,
+                after_stock=new_stock,
+                unit=receipt_item.unit,
+                unit_price=receipt_item.unit_price,
+                total_amount=abs(difference) * float(receipt_item.unit_price or 0),
+                source_type="收据余量",
+                source_no=receipt.receipt_no if receipt else str(receipt_item.receipt_id),
+                operator=user.display_name or user.username,
+                notes=str(payload.get("notes") or ""),
+            )
+        )
+        db.commit()
+        return {
+            "status": "ok",
+            "item": {
+                "receipt_item_id": receipt_item.id,
+                "receipt_id": receipt_item.receipt_id,
+                "stock": float(receipt_item.available_quantity or 0),
+                "before_stock": before_stock,
+                "difference": difference,
+            },
+        }
+
     product_id = int(payload.get("product_id") or 0)
     variant_id = payload.get("variant_id")
     new_stock = float(payload.get("new_stock") or 0)

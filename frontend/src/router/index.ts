@@ -15,7 +15,9 @@ import EntityCrudView from '../views/EntityCrudView.vue'
 import OrderManagementView from '../views/OrderManagementView.vue'
 import ProductCatalogView from '../views/ProductCatalogView.vue'
 import PurchaseManagementView from '../views/PurchaseManagementView.vue'
+import ReceiptInboundView from '../views/ReceiptInboundView.vue'
 import OutboundManagementView from '../views/OutboundManagementView.vue'
+import InventoryManagementView from '../views/InventoryManagementView.vue'
 import ScheduleManagementView from '../views/ScheduleManagementView.vue'
 import SystemSettingsView from '../views/SystemSettingsView.vue'
 import ReportSummaryView from '../views/ReportSummaryView.vue'
@@ -52,7 +54,7 @@ const title = {
   systemUsers: '账号权限',
 }
 
-const businessTypeOptions = ['租摆', '销售', '换花', '赠送', '撤花', '室外养护', '工程养护']
+const businessTypeOptions = ['租摆', '工程绿化', '电网', '保洁', '销售', '换花', '赠送', '撤花', '室外养护', '工程养护']
 const projectOptions = { optionEndpoint: '/projects', optionLabel: 'name', optionValue: 'id' }
 const customerOptions = { optionEndpoint: '/customers', optionLabel: 'name', optionValue: 'id' }
 const employeeOptions = { optionEndpoint: '/employees', optionLabel: 'name', optionValue: 'id' }
@@ -83,13 +85,13 @@ const routes = [
       { path: '403', name: 'forbidden', component: ForbiddenView, meta: { title: '无权限' } },
       { path: 'goods', name: 'goods', component: ProductCatalogView, meta: { title: title.goods, permission: 'goods' } },
       { path: 'customers', name: 'customers', component: EntityCrudView, meta: { title: title.customers, entity: 'customer', permission: 'customers' } },
-      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', permission: 'projects', canCreate: true, canEdit: true, columns: [
+      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', queryParams: ['business'], permission: 'projects', canCreate: true, canEdit: true, columns: [
         { prop: 'code', label: '项目编号', width: 120 }, { prop: 'name', label: '项目名称', minWidth: 180 }, { prop: 'customer_name', label: '客户', minWidth: 140 }, { prop: 'business_types', label: '业务类型', minWidth: 130 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'address', label: '地址', minWidth: 220 },
       ], formFields: [
         { key: 'code', label: '项目编号', required: true },
         { key: 'name', label: '项目名称', required: true },
         { key: 'customer_id', label: '客户', type: 'select', required: true, ...customerOptions },
-        { key: 'business_types', label: '业务类型', type: 'multi-select', options: businessTypeOptions, default: ['租摆'] },
+        { key: 'business_types', label: '业务类型', type: 'multi-select', options: businessTypeOptions, default: ['租摆'], defaultFromQuery: 'business' },
         { key: 'plant_source', label: '植物来源', type: 'select', options: ['新采购', '买断上一家', '客户自有', '库存调拨'], default: '新采购' },
         { key: 'supervisor_id', label: '负责主管', type: 'select', ...employeeOptions },
         { key: 'customer_service_id', label: '客服', type: 'select', ...employeeOptions },
@@ -101,6 +103,7 @@ const routes = [
       { path: 'staff', name: 'staff', component: EntityCrudView, meta: { title: title.staff, entity: 'employee', permission: 'staff' } },
       { path: 'module/order/:orderType', name: 'order-management', component: OrderManagementView, meta: { title: title.orders, permission: 'orders' } },
       { path: 'module/purchase/list', name: 'purchase-list', component: PurchaseManagementView, meta: { title: title.purchase, permission: 'purchase_inventory' } },
+      { path: 'module/purchase/receipts', name: 'purchase-receipts', component: ReceiptInboundView, meta: { title: '收据入库', permission: 'purchase_inventory' } },
       { path: 'module/warehouse/list', name: 'warehouse-list', component: OutboundManagementView, meta: { title: title.outbound, permission: 'orders' } },
       { path: 'module/schedule/list', name: 'schedule-list', component: ScheduleManagementView, meta: { title: title.schedule, permission: 'schedule_workflow' } },
       { path: 'module/system/settings', name: 'system-settings', component: SystemSettingsView, meta: { title: title.settings, permission: 'system' } },
@@ -134,7 +137,7 @@ const routes = [
       ], rowActions: [
         { label: '确认入库', type: 'success', endpoint: '/purchases/{id}/receive', confirm: '确认采购货品已入库吗？' },
       ] } },
-      { path: 'module/inventory/check', name: 'inventory-check', component: BasicListView, meta: { title: title.inventory, endpoint: '/inventory', permission: 'purchase_inventory', columns: [
+      { path: 'module/inventory/check', name: 'inventory-check', component: InventoryManagementView, meta: { title: title.inventory, permission: 'purchase_inventory', columns: [
         { prop: 'variant_code', label: '规格编码', width: 160 }, { prop: 'product_code', label: '商品编码', width: 140 }, { prop: 'product_name', label: '商品名称', minWidth: 170 }, { prop: 'category', label: '分类', width: 100 }, { prop: 'specification', label: '规格', minWidth: 160 }, { prop: 'unit', label: '单位', width: 80 }, { prop: 'stock', label: '库存', width: 100 }, { prop: 'reference_purchase_price', label: '最新采购价', width: 120 }, { prop: 'status', label: '状态', width: 90 },
       ] } },
       { path: 'module/system/admins', name: 'system-users', component: BasicListView, meta: { title: title.systemUsers, endpoint: '/system/users', permission: 'system', canCreate: true, canEdit: true, columns: [

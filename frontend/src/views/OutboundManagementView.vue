@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Calendar, Check, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api/client'
@@ -8,10 +8,12 @@ import { api } from '../api/client'
 type Row = Record<string, any>
 
 const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
 const highlightNo = ref('')
+const statusFilter = ref('pending')
 const orders = ref<Row[]>([])
 const products = ref<Row[]>([])
 const employees = ref<Row[]>([])
@@ -21,6 +23,27 @@ const dialogVisible = ref(false)
 const scheduleVisible = ref(false)
 const form = reactive<Row>({})
 const scheduleForm = reactive<Row>({})
+const statusTabs = [
+  { label: '待配送', value: 'pending' },
+  { label: '配送中', value: 'active' },
+  { label: '已完成', value: 'done' },
+  { label: '全部', value: 'all' },
+]
+
+const filteredOrders = computed(() => orders.value.filter((row) => {
+  if (statusFilter.value === 'all') return true
+  if (statusFilter.value === 'pending') return ['待配送', '待出库', '待派单', '待派配送'].includes(row.status)
+  if (statusFilter.value === 'active') return ['已出库', '已发布', '配送中', '已出发', '已送达'].includes(row.status)
+  if (statusFilter.value === 'done') return ['已完成'].includes(row.status)
+  return true
+}))
+
+const statusCounts = computed(() => ({
+  pending: orders.value.filter((row) => ['待配送', '待出库', '待派单', '待派配送'].includes(row.status)).length,
+  active: orders.value.filter((row) => ['已出库', '已发布', '配送中', '已出发', '已送达'].includes(row.status)).length,
+  done: orders.value.filter((row) => row.status === '已完成').length,
+  all: orders.value.length,
+}))
 
 function resetForm(values: Row) {
   Object.keys(form).forEach((key) => delete form[key])
@@ -208,6 +231,7 @@ async function createSchedule() {
     ElMessage.success(response.data.status === 'exists' ? `安排已存在：${response.data.task_no}` : `已生成每日安排：${response.data.task_no}`)
     scheduleVisible.value = false
     await loadOrders()
+    router.push({ path: '/module/schedule/list', query: { date: scheduleForm.schedule_date || '' } })
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || '生成每日安排失败')
   } finally {
@@ -239,10 +263,13 @@ loadOrders()
     <article class="panel table-panel">
       <div class="table-toolbar">
         <el-input v-model="keyword" clearable :prefix-icon="Search" placeholder="搜索单号、项目/用途、经办人" @keyup.enter="loadOrders" @clear="loadOrders" />
+        <el-radio-group v-model="statusFilter" class="status-tabs">
+          <el-radio-button v-for="tab in statusTabs" :key="tab.value" :value="tab.value">{{ tab.label }} {{ statusCounts[tab.value as keyof typeof statusCounts] }}</el-radio-button>
+        </el-radio-group>
         <el-button type="success" plain :icon="Search" @click="loadOrders">查询</el-button>
         <el-button :icon="Refresh" @click="keyword=''; loadOrders()">重置</el-button>
       </div>
-      <el-table v-loading="loading" :data="orders" stripe :row-class-name="rowClassName">
+      <el-table v-loading="loading" :data="filteredOrders" stripe :row-class-name="rowClassName">
         <el-table-column prop="order_no" label="出库单号" min-width="140" />
         <el-table-column prop="outbound_type" label="出库类型" width="105" />
         <el-table-column prop="project_name" label="项目/用途" min-width="150" />

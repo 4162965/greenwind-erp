@@ -22,6 +22,57 @@ SQLITE_TABLES = {
             created_at DATETIME
         )
     """,
+    "purchase_receipts": """
+        CREATE TABLE IF NOT EXISTS purchase_receipts (
+            id INTEGER NOT NULL PRIMARY KEY,
+            receipt_no VARCHAR(64) NOT NULL DEFAULT '',
+            supplier VARCHAR(128) NOT NULL DEFAULT '',
+            purchaser VARCHAR(64) NOT NULL DEFAULT '',
+            receipt_date DATE,
+            source_purchase_no VARCHAR(64) NOT NULL DEFAULT '',
+            status VARCHAR(16) NOT NULL DEFAULT '有未安排',
+            notes TEXT NOT NULL DEFAULT '',
+            created_by VARCHAR(64) NOT NULL DEFAULT '',
+            created_at DATETIME
+        )
+    """,
+    "purchase_receipt_items": """
+        CREATE TABLE IF NOT EXISTS purchase_receipt_items (
+            id INTEGER NOT NULL PRIMARY KEY,
+            receipt_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            variant_id INTEGER,
+            product_name VARCHAR(128) NOT NULL DEFAULT '',
+            variant_name VARCHAR(128) NOT NULL DEFAULT '',
+            total_quantity FLOAT NOT NULL DEFAULT 0,
+            available_quantity FLOAT NOT NULL DEFAULT 0,
+            unit VARCHAR(32) NOT NULL DEFAULT '件',
+            unit_price FLOAT NOT NULL DEFAULT 0,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at DATETIME
+        )
+    """,
+    "purchase_receipt_allocations": """
+        CREATE TABLE IF NOT EXISTS purchase_receipt_allocations (
+            id INTEGER NOT NULL PRIMARY KEY,
+            receipt_item_id INTEGER NOT NULL,
+            receipt_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            variant_id INTEGER,
+            project_id INTEGER,
+            project_name VARCHAR(128) NOT NULL DEFAULT '',
+            business_order_id INTEGER,
+            business_order_no VARCHAR(64) NOT NULL DEFAULT '',
+            quantity FLOAT NOT NULL DEFAULT 0,
+            unit VARCHAR(32) NOT NULL DEFAULT '件',
+            unit_price FLOAT NOT NULL DEFAULT 0,
+            total_amount FLOAT NOT NULL DEFAULT 0,
+            allocation_type VARCHAR(16) NOT NULL DEFAULT '项目订单',
+            operator VARCHAR(64) NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at DATETIME
+        )
+    """,
 }
 
 
@@ -48,6 +99,8 @@ SQLITE_COLUMNS = {
         "monthly_rental_price": "FLOAT NOT NULL DEFAULT 0",
         "replacement_cost_price": "FLOAT NOT NULL DEFAULT 0",
         "min_sale_price": "FLOAT NOT NULL DEFAULT 0",
+        "grid_greenwind_price": "FLOAT NOT NULL DEFAULT 0",
+        "grid_shengjing_price": "FLOAT NOT NULL DEFAULT 0",
         "package_conversion_enabled": "BOOLEAN NOT NULL DEFAULT 0",
         "status": "VARCHAR(16) NOT NULL DEFAULT '启用'",
     },
@@ -78,6 +131,8 @@ SQLITE_COLUMNS = {
         "monthly_rental_price": "FLOAT NOT NULL DEFAULT 0",
         "replacement_cost_price": "FLOAT NOT NULL DEFAULT 0",
         "min_sale_price": "FLOAT NOT NULL DEFAULT 0",
+        "grid_greenwind_price": "FLOAT NOT NULL DEFAULT 0",
+        "grid_shengjing_price": "FLOAT NOT NULL DEFAULT 0",
         "stock": "FLOAT NOT NULL DEFAULT 0",
         "status": "VARCHAR(16) NOT NULL DEFAULT '启用'",
     },

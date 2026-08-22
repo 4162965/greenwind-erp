@@ -25,6 +25,9 @@ from ..models import (
     ProjectPlantChange,
     PurchaseOrder,
     PurchaseOrderItem,
+    PurchaseReceipt,
+    PurchaseReceiptAllocation,
+    PurchaseReceiptItem,
     ScheduleTask,
     User,
 )
@@ -43,6 +46,14 @@ TYPE_MAP = {
     "delivery": "配送订单",
     "gift": "赠送订单",
     "withdraw": "撤花订单",
+    "engineering": "工程订单",
+    "engineering-service": "修剪补种任务",
+    "engineering-material": "工程物料任务",
+    "grid-greenwind": "电网绿风订单",
+    "grid-shengjing": "电网盛景订单",
+    "cleaning": "保洁订单",
+    "cleaning-service": "保洁任务",
+    "cleaning-material": "保洁物料配送",
 }
 ORDER_PREFIX = {
     "租赁订单": "ZB",
@@ -52,6 +63,14 @@ ORDER_PREFIX = {
     "配送订单": "PS",
     "赠送订单": "ZS",
     "撤花订单": "CH",
+    "工程订单": "GC",
+    "修剪补种任务": "GJ",
+    "工程物料任务": "GW",
+    "电网绿风订单": "DL",
+    "电网盛景订单": "DS",
+    "保洁订单": "BJ",
+    "保洁任务": "BR",
+    "保洁物料配送": "BW",
 }
 
 # 审批机制还没有最终确定，先保留代码但暂停自动触发。
@@ -327,11 +346,15 @@ def item_unit(item: BusinessOrderItem, db: Session) -> str:
 def order_item_available_stock(item: BusinessOrderItem, db: Session) -> float:
     if not item.product_id:
         return 0
+    filters = [
+        PurchaseReceiptItem.product_id == int(item.product_id),
+        PurchaseReceiptItem.available_quantity > 0,
+    ]
     if item.variant_id:
-        variant = db.get(ProductVariant, item.variant_id)
-        return float(variant.stock or 0) if variant else 0
-    product = db.get(Product, item.product_id)
-    return float(product.stock or 0) if product else 0
+        filters.append(PurchaseReceiptItem.variant_id == int(item.variant_id))
+    else:
+        filters.append(PurchaseReceiptItem.variant_id.is_(None))
+    return float(db.scalar(select(func.coalesce(func.sum(PurchaseReceiptItem.available_quantity), 0)).where(*filters)) or 0)
 
 
 def order_items_all_in_stock(items: list[BusinessOrderItem], db: Session) -> bool:
@@ -343,6 +366,85 @@ def order_items_all_in_stock(items: list[BusinessOrderItem], db: Session) -> boo
 
 def order_item_stock_shortage(item: BusinessOrderItem, db: Session) -> float:
     return max(0, float(item.quantity or 0) - order_item_available_stock(item, db))
+
+
+def existing_receipt_allocation_quantity(order: BusinessOrder, item: BusinessOrderItem, db: Session) -> float:
+    if not item.product_id:
+        return 0
+    filters = [
+        PurchaseReceiptAllocation.business_order_id == order.id,
+        PurchaseReceiptAllocation.product_id == int(item.product_id),
+    ]
+    if item.variant_id:
+        filters.append(PurchaseReceiptAllocation.variant_id == int(item.variant_id))
+    else:
+        filters.append(PurchaseReceiptAllocation.variant_id.is_(None))
+    return float(db.scalar(select(func.coalesce(func.sum(PurchaseReceiptAllocation.quantity), 0)).where(*filters)) or 0)
+
+
+def allocate_receipt_balance_to_order(order: BusinessOrder, item: BusinessOrderItem, db: Session, user: User) -> tuple[float, float]:
+    if not item.product_id:
+        return 0, float(item.quantity or 0)
+    already_allocated = existing_receipt_allocation_quantity(order, item, db)
+    remaining = max(0, float(item.quantity or 0) - already_allocated)
+    if remaining <= 0:
+        return 0, 0
+    filters = [
+        PurchaseReceiptItem.product_id == int(item.product_id),
+        PurchaseReceiptItem.available_quantity > 0,
+    ]
+    if item.variant_id:
+        filters.append(PurchaseReceiptItem.variant_id == int(item.variant_id))
+    else:
+        filters.append(PurchaseReceiptItem.variant_id.is_(None))
+    receipt_items = db.scalars(
+        select(PurchaseReceiptItem)
+        .where(*filters)
+        .order_by(PurchaseReceiptItem.created_at.asc(), PurchaseReceiptItem.id.asc())
+    ).all()
+    allocated = 0.0
+    operator = user.display_name or user.username
+    touched_receipt_ids: set[int] = set()
+    for receipt_item in receipt_items:
+        if remaining <= 0:
+            break
+        use_quantity = min(remaining, float(receipt_item.available_quantity or 0))
+        if use_quantity <= 0:
+            continue
+        receipt_item.available_quantity = float(receipt_item.available_quantity or 0) - use_quantity
+        touched_receipt_ids.add(receipt_item.receipt_id)
+        receipt = db.get(PurchaseReceipt, receipt_item.receipt_id)
+        db.add(
+            PurchaseReceiptAllocation(
+                receipt_item_id=receipt_item.id,
+                receipt_id=receipt_item.receipt_id,
+                product_id=receipt_item.product_id,
+                variant_id=receipt_item.variant_id,
+                project_id=order.project_id,
+                project_name=order.project_name,
+                business_order_id=order.id,
+                business_order_no=order.order_no,
+                quantity=use_quantity,
+                unit=receipt_item.unit or item.unit,
+                unit_price=float(receipt_item.unit_price or 0),
+                total_amount=use_quantity * float(receipt_item.unit_price or 0),
+                allocation_type="order",
+                operator=operator,
+                notes=f"订单采购优先匹配收据余量；来源收据 {receipt.receipt_no if receipt else receipt_item.receipt_id}",
+            )
+        )
+        allocated += use_quantity
+        remaining -= use_quantity
+    for receipt_id in touched_receipt_ids:
+        receipt = db.get(PurchaseReceipt, receipt_id)
+        if not receipt:
+            continue
+        available = db.scalar(
+            select(func.coalesce(func.sum(PurchaseReceiptItem.available_quantity), 0))
+            .where(PurchaseReceiptItem.receipt_id == receipt_id)
+        ) or 0
+        receipt.status = "有未安排" if float(available or 0) > 0 else "已全部分配"
+    return allocated, remaining
 
 
 def replace_items(order: BusinessOrder, entries: list[dict], db: Session):
@@ -1086,17 +1188,33 @@ def create_purchase_from_order(
     product_items = [item for item in items if item.product_id]
     if not product_items:
         raise HTTPException(status_code=400, detail="订单没有可采购的商品明细")
-    if order.need_purchase:
-        shortage_items = [(item, order_item_stock_shortage(item, db)) for item in product_items]
-        shortage_items = [(item, shortage) for item, shortage in shortage_items if shortage > 0]
-    else:
-        shortage_items = [(item, float(item.quantity or 0)) for item in product_items]
-    if order.need_purchase and not shortage_items:
+    allocation_results = []
+    shortage_items = []
+    for item in product_items:
+        allocated_quantity, shortage_quantity = allocate_receipt_balance_to_order(order, item, db, user)
+        if allocated_quantity > 0:
+            allocation_results.append(
+                {
+                    "item_id": item.id,
+                    "product_name": item.product_name,
+                    "variant_name": item.variant_name,
+                    "allocated_quantity": allocated_quantity,
+                }
+            )
+        if shortage_quantity > 0:
+            shortage_items.append((item, shortage_quantity))
+    if not shortage_items:
         order.need_purchase = False
         order.status = "待配送" if order.need_delivery else "已完成"
         db.commit()
         db.refresh(order)
-        return {"status": "stock_available", "purchase_order_id": None, "purchase_order_no": "", "message": "仓库库存充足，已进入待配送"}
+        return {
+            "status": "receipt_allocated",
+            "purchase_order_id": None,
+            "purchase_order_no": "",
+            "allocations": allocation_results,
+            "message": "已优先匹配未安排收据余量，订单进入待配送",
+        }
 
     purchase = PurchaseOrder(
         order_no=generated_no,
@@ -1139,7 +1257,12 @@ def create_purchase_from_order(
     sync_order_status_from_flow(order, db)
     db.commit()
     db.refresh(purchase)
-    return {"status": "created", "purchase_order_id": purchase.id, "purchase_order_no": purchase.order_no}
+    return {
+        "status": "created",
+        "purchase_order_id": purchase.id,
+        "purchase_order_no": purchase.order_no,
+        "allocations": allocation_results,
+    }
 
 
 @router.post("/{order_id}/create-outbound")

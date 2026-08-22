@@ -119,6 +119,8 @@ class ProductBase(BaseModel):
     monthly_rental_price: float = Field(default=0, ge=0)
     replacement_cost_price: float = Field(default=0, ge=0)
     min_sale_price: float = Field(default=0, ge=0)
+    grid_greenwind_price: float = Field(default=0, ge=0)
+    grid_shengjing_price: float = Field(default=0, ge=0)
     package_conversion_enabled: bool = False
     status: str = Field(default="启用", max_length=16)
 
@@ -147,6 +149,8 @@ class ProductUpdate(BaseModel):
     monthly_rental_price: float | None = Field(default=None, ge=0)
     replacement_cost_price: float | None = Field(default=None, ge=0)
     min_sale_price: float | None = Field(default=None, ge=0)
+    grid_greenwind_price: float | None = Field(default=None, ge=0)
+    grid_shengjing_price: float | None = Field(default=None, ge=0)
     package_conversion_enabled: bool | None = None
     status: str | None = Field(default=None, max_length=16)
 
@@ -172,6 +176,8 @@ class ProductVariantBase(BaseModel):
     monthly_rental_price: float = Field(default=0, ge=0)
     replacement_cost_price: float = Field(default=0, ge=0)
     min_sale_price: float = Field(default=0, ge=0)
+    grid_greenwind_price: float = Field(default=0, ge=0)
+    grid_shengjing_price: float = Field(default=0, ge=0)
     stock: float = Field(default=0, ge=0)
     status: str = Field(default="启用", max_length=16)
 
@@ -194,6 +200,8 @@ class ProductVariantUpdate(BaseModel):
     monthly_rental_price: float | None = Field(default=None, ge=0)
     replacement_cost_price: float | None = Field(default=None, ge=0)
     min_sale_price: float | None = Field(default=None, ge=0)
+    grid_greenwind_price: float | None = Field(default=None, ge=0)
+    grid_shengjing_price: float | None = Field(default=None, ge=0)
     stock: float | None = Field(default=None, ge=0)
     status: str | None = Field(default=None, max_length=16)
 

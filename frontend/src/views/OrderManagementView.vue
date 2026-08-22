@@ -40,10 +40,24 @@ const typeMeta: Record<string, { title: string; apiType: string; prefix: string;
   withdraw: { title: '撤花单', apiType: 'withdraw', prefix: 'CH', desc: '用于主管或客服安排撤出某项目、楼层、区域或单盆植物，完成后会扣减项目植物清单。' },
   maintenance: { title: '养护订单', apiType: 'maintenance', prefix: 'YH', desc: '用于修剪、打药、室外养护和临时养护工程任务登记。' },
   delivery: { title: '配送订单', apiType: 'delivery', prefix: 'PS', desc: '用于记录配送类任务和相关人员可见的处理进度。' },
+  engineering: { title: '工程订单', apiType: 'engineering', prefix: 'GC', desc: '用于工程绿化项目的草皮、灌木、乔木养护、修剪、补种和施工协助登记。' },
+  'engineering-service': { title: '修剪/补种任务', apiType: 'engineering-service', prefix: 'GJ', desc: '用于工程项目免费或收费修剪、补种、派人协助等任务登记。' },
+  'engineering-material': { title: '工程物料任务', apiType: 'engineering-material', prefix: 'GW', desc: '用于工程项目需要采购再配送的物料需求。' },
+  'grid-greenwind': { title: '电网绿风订单', apiType: 'grid-greenwind', prefix: 'DL', desc: '用于电网业务中绿风公司供货订单，商品默认取绿风电网合同价。' },
+  'grid-shengjing': { title: '电网盛景订单', apiType: 'grid-shengjing', prefix: 'DS', desc: '用于电网业务中盛景公司供货订单，商品默认取盛景电网合同价。' },
+  cleaning: { title: '保洁订单', apiType: 'cleaning', prefix: 'BJ', desc: '用于保洁项目订单、物料配送和现场协助任务登记。' },
+  'cleaning-service': { title: '保洁任务', apiType: 'cleaning-service', prefix: 'BR', desc: '用于保洁项目修剪、协助、临时派工等任务登记。' },
+  'cleaning-material': { title: '保洁物料配送', apiType: 'cleaning-material', prefix: 'BW', desc: '用于保洁项目需要采购再配送的物料需求。' },
 }
 
 const currentKey = computed(() => String(route.params.orderType || 'lease'))
 const meta = computed(() => typeMeta[currentKey.value] || typeMeta.lease)
+const projectBusiness = computed(() => {
+  if (meta.value.apiType.startsWith('engineering')) return '工程绿化'
+  if (meta.value.apiType.startsWith('grid')) return '电网'
+  if (meta.value.apiType.startsWith('cleaning')) return '保洁'
+  return '租摆'
+})
 const orderColumns = [
   { key: 'order_no', label: '订单号' },
   { key: 'project_name', label: '项目' },
@@ -145,6 +159,19 @@ function formatNumber(value: number | string | null | undefined) {
   const number = Number(value)
   if (Number.isNaN(number)) return ''
   return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function orderUnitPrice(product: Row, variant?: Row) {
+  if (meta.value.apiType === 'grid-greenwind') {
+    return variant?.grid_greenwind_price || product.grid_greenwind_price || variant?.sale_price || product.sale_price || 0
+  }
+  if (meta.value.apiType === 'grid-shengjing') {
+    return variant?.grid_shengjing_price || product.grid_shengjing_price || variant?.sale_price || product.sale_price || 0
+  }
+  if (meta.value.apiType === 'lease' || meta.value.apiType === 'exchange') {
+    return variant?.monthly_rental_price || product.monthly_rental_price || variant?.sale_price || product.sale_price || 0
+  }
+  return variant?.sale_price || variant?.monthly_rental_price || product.sale_price || product.monthly_rental_price || 0
 }
 
 function orderTotal(row: Row) {
@@ -304,7 +331,11 @@ function openProgress(row: Row) {
 }
 
 async function loadBaseData() {
-  const [productResponse, projectResponse, customerResponse] = await Promise.all([api.get('/products'), api.get('/projects'), api.get('/customers')])
+  const [productResponse, projectResponse, customerResponse] = await Promise.all([
+    api.get('/products'),
+    api.get('/projects', { params: { business: projectBusiness.value } }),
+    api.get('/customers'),
+  ])
   products.value = productResponse.data.items
   projects.value = projectResponse.data.items
   customers.value = customerResponse.data.items
@@ -320,7 +351,7 @@ async function loadBaseData() {
         product_name: product.name,
         variant_name: product.specification || '',
         unit: product.project_unit || product.unit || '件',
-        unit_price: product.monthly_rental_price || product.sale_price || 0,
+        unit_price: orderUnitPrice(product),
         image_url: product.image_url || '',
       }]
     }
@@ -332,7 +363,7 @@ async function loadBaseData() {
       product_name: product.name,
       variant_name: variantLabel(variant),
       unit: variant.unit || product.project_unit || product.unit || '件',
-      unit_price: variant.sale_price || variant.monthly_rental_price || product.monthly_rental_price || product.sale_price || 0,
+      unit_price: orderUnitPrice(product, variant),
       image_url: variant.image_url || product.image_url || '',
     }))
   })
@@ -495,11 +526,13 @@ async function changeStatus(row: Row, status: string) {
 async function createPurchase(row: Row) {
   try {
     const response = await api.post(`/orders/${row.id}/create-purchase`)
-    if (response.data.status === 'stock_available') {
-      ElMessage.success(response.data.message || '仓库库存充足，已进入待配送')
+    const allocatedCount = Array.isArray(response.data.allocations) ? response.data.allocations.length : 0
+    if (response.data.status === 'receipt_allocated' || response.data.status === 'stock_available') {
+      ElMessage.success(response.data.message || '已优先匹配未安排收据余量，订单进入待配送')
       await loadOrders()
     } else {
-      ElMessage.success(response.data.status === 'exists' ? `采购单已存在：${response.data.purchase_order_no}` : `已生成采购单：${response.data.purchase_order_no}`)
+      const prefix = allocatedCount ? `已匹配 ${allocatedCount} 条收据余量，` : ''
+      ElMessage.success(response.data.status === 'exists' ? `采购单已存在：${response.data.purchase_order_no}` : `${prefix}缺口已生成采购单：${response.data.purchase_order_no}`)
       await loadOrders()
       if (response.data.purchase_order_no) {
         router.push({ path: '/module/purchase/list', query: { highlight: response.data.purchase_order_no } })

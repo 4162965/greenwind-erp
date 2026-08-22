@@ -77,6 +77,8 @@ class Product(Base):
     monthly_rental_price: Mapped[float] = mapped_column(Float, default=0)
     replacement_cost_price: Mapped[float] = mapped_column(Float, default=0)
     min_sale_price: Mapped[float] = mapped_column(Float, default=0)
+    grid_greenwind_price: Mapped[float] = mapped_column(Float, default=0)
+    grid_shengjing_price: Mapped[float] = mapped_column(Float, default=0)
     package_conversion_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default="启用")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -113,6 +115,8 @@ class ProductVariant(Base):
     monthly_rental_price: Mapped[float] = mapped_column(Float, default=0)
     replacement_cost_price: Mapped[float] = mapped_column(Float, default=0)
     min_sale_price: Mapped[float] = mapped_column(Float, default=0)
+    grid_greenwind_price: Mapped[float] = mapped_column(Float, default=0)
+    grid_shengjing_price: Mapped[float] = mapped_column(Float, default=0)
     stock: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(16), default="启用")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -149,6 +153,60 @@ class PurchaseOrderItem(Base):
     unit_price: Mapped[float] = mapped_column(Float, default=0)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class PurchaseReceipt(Base):
+    __tablename__ = "purchase_receipts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_no: Mapped[str] = mapped_column(String(64), index=True)
+    supplier: Mapped[str] = mapped_column(String(128), default="")
+    purchaser: Mapped[str] = mapped_column(String(64), default="")
+    receipt_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_purchase_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    status: Mapped[str] = mapped_column(String(16), default="有未安排")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+
+
+class PurchaseReceiptItem(Base):
+    __tablename__ = "purchase_receipt_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("purchase_receipts.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    variant_id: Mapped[int | None] = mapped_column(ForeignKey("product_variants.id"), nullable=True, index=True)
+    product_name: Mapped[str] = mapped_column(String(128), default="")
+    variant_name: Mapped[str] = mapped_column(String(128), default="")
+    total_quantity: Mapped[float] = mapped_column(Float, default=0)
+    available_quantity: Mapped[float] = mapped_column(Float, default=0, index=True)
+    unit: Mapped[str] = mapped_column(String(32), default="件")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+
+
+class PurchaseReceiptAllocation(Base):
+    __tablename__ = "purchase_receipt_allocations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_item_id: Mapped[int] = mapped_column(ForeignKey("purchase_receipt_items.id"), index=True)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("purchase_receipts.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    variant_id: Mapped[int | None] = mapped_column(ForeignKey("product_variants.id"), nullable=True, index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    project_name: Mapped[str] = mapped_column(String(128), default="")
+    business_order_id: Mapped[int | None] = mapped_column(ForeignKey("business_orders.id"), nullable=True, index=True)
+    business_order_no: Mapped[str] = mapped_column(String(64), default="", index=True)
+    quantity: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(32), default="件")
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    total_amount: Mapped[float] = mapped_column(Float, default=0)
+    allocation_type: Mapped[str] = mapped_column(String(16), default="项目订单")
+    operator: Mapped[str] = mapped_column(String(64), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
 
 class InventoryMovement(Base):

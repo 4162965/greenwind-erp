@@ -9,6 +9,7 @@ type Row = Record<string, any>
 const route = useRoute()
 const loading = ref(false)
 const rows = ref<Row[]>([])
+const detailRows = ref<Row[]>([])
 const summary = ref<Row>({})
 const typeStats = ref<Row[]>([])
 const statusStats = ref<Row[]>([])
@@ -35,6 +36,7 @@ async function loadRows() {
     if (isGoods.value) {
       const response = await api.get('/reports/goods-summary', { params: { keyword: filters.keyword.trim(), category: filters.category || undefined } })
       rows.value = response.data.items || []
+      detailRows.value = []
       summary.value = response.data.summary || {}
       categories.value = response.data.categories || []
       typeStats.value = []
@@ -44,6 +46,7 @@ async function loadRows() {
     if (isProfit.value) {
       const response = await api.get('/reports/project-costs', { params: { keyword: filters.keyword.trim(), start_date: filters.start_date || undefined, end_date: filters.end_date || undefined } })
       rows.value = response.data.items || []
+      detailRows.value = response.data.details || []
       summary.value = response.data.summary || {}
       typeStats.value = []
       statusStats.value = []
@@ -51,6 +54,7 @@ async function loadRows() {
     }
     const response = await api.get('/reports/order-stats', { params: { keyword: filters.keyword.trim(), start_date: filters.start_date || undefined, end_date: filters.end_date || undefined } })
     rows.value = response.data.items || []
+    detailRows.value = []
     summary.value = response.data.summary || {}
     typeStats.value = response.data.type_stats || []
     statusStats.value = response.data.status_stats || []
@@ -170,6 +174,19 @@ onMounted(loadRows)
           <el-table-column prop="status" label="状态" width="95" />
         </template>
       </el-table>
+
+      <div v-if="isProfit" class="cost-detail-block">
+        <h3>项目成本明细</h3>
+        <el-table :data="detailRows" stripe size="small">
+          <el-table-column prop="date" label="日期" width="110" />
+          <el-table-column prop="project_name" label="项目" min-width="170" show-overflow-tooltip />
+          <el-table-column prop="category" label="分类" width="120" />
+          <el-table-column prop="source_no" label="来源单号" min-width="130" />
+          <el-table-column prop="description" label="说明" min-width="260" show-overflow-tooltip />
+          <el-table-column label="收入" width="110"><template #default="scope">{{ money(scope.row.income) }}</template></el-table-column>
+          <el-table-column label="成本" width="110"><template #default="scope">{{ money(scope.row.cost) }}</template></el-table-column>
+        </el-table>
+      </div>
     </article>
   </div>
 </template>

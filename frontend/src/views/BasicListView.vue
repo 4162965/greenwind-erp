@@ -20,6 +20,7 @@ type Field = {
   optionLabel?: string
   optionValue?: string
   placeholder?: string
+  defaultFromQuery?: string
   createOnly?: boolean
   editOnly?: boolean
   readonly?: boolean
@@ -57,6 +58,7 @@ const canDelete = computed(() => Boolean(route.meta.canDelete))
 const columns = computed<Column[]>(() => Array.isArray(route.meta.columns) ? route.meta.columns as Column[] : [])
 const formFields = computed<Field[]>(() => Array.isArray(route.meta.formFields) ? route.meta.formFields as Field[] : [])
 const rowActions = computed<RowAction[]>(() => Array.isArray(route.meta.rowActions) ? route.meta.rowActions as RowAction[] : [])
+const queryParams = computed<string[]>(() => Array.isArray(route.meta.queryParams) ? route.meta.queryParams as string[] : [])
 
 function valueText(row: Row, prop: string) {
   const value = row[prop]
@@ -96,7 +98,13 @@ async function loadRows() {
   if (!endpoint.value) return
   loading.value = true
   try {
-    const response = await api.get(endpoint.value, { params: { keyword: keyword.value.trim() || undefined } })
+    const params: Row = { keyword: keyword.value.trim() || undefined }
+    queryParams.value.forEach((key) => {
+      const value = route.query[key]
+      if (Array.isArray(value)) params[key] = value[0]
+      else if (value) params[key] = value
+    })
+    const response = await api.get(endpoint.value, { params })
     const data = response.data
     rows.value = Array.isArray(data) ? data : data.items || []
     total.value = Number(data.total ?? rows.value.length)
@@ -120,7 +128,8 @@ function resetForm(row?: Row) {
     if (field.editOnly && !row) return
     if (field.createOnly && row) return
     if (field.type === 'multi-select') {
-      const raw = row ? row[field.key] : field.default
+      const queryValue = field.defaultFromQuery ? route.query[field.defaultFromQuery] : undefined
+      const raw = row ? row[field.key] : (queryValue || field.default)
       form[field.key] = Array.isArray(raw) ? raw : String(raw || '').split(',').map((item) => item.trim()).filter(Boolean)
     } else if (field.type === 'switch') {
       form[field.key] = row ? Boolean(row[field.key]) : Boolean(field.default)

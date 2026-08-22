@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ArrowDown, Check, Delete, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api/client'
 
 type Row = Record<string, any>
 
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
@@ -133,6 +135,13 @@ function resetFilters() {
   loadRows()
 }
 
+function applyRouteDate() {
+  const date = String(route.query.date || '').trim()
+  if (!date) return
+  selectedDate.value = date
+  dateRange.value = [date, date]
+}
+
 function plantDetailLines(row: Row) {
   const raw = String(row.item_summary || '').trim()
   if (!raw) return ['暂无植物明细']
@@ -236,6 +245,11 @@ async function deleteTask(row: Row) {
   }
 }
 
+watch(() => route.query.date, () => {
+  applyRouteDate()
+})
+
+applyRouteDate()
 loadOptions()
 loadRows()
 </script>

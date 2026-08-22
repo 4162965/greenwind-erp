@@ -224,7 +224,7 @@ def sync_source_progress(task: ScheduleTask, status_text: str, db: Session):
 
     if source_type == "出库单":
         outbound = db.scalar(select(OutboundOrder).where(OutboundOrder.order_no == source_no))
-        if outbound and outbound.status == "已出库":
+        if outbound and outbound.status not in {"已取消", "作废"}:
             outbound.status = mapped_status
         related_order_no = source_no[3:] if source_no.startswith("CK-") else ""
         if related_order_no:

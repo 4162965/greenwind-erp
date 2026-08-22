@@ -11,14 +11,14 @@ interface ProductRow {
   sale_price: number; stock: number; image_url: string; image_urls: string; specification_items: string
   purchase_unit: string; base_unit: string; project_unit: string; conversion_rate: number
   project_conversion_rate: number; reference_purchase_price: number; monthly_rental_price: number
-  replacement_cost_price: number; min_sale_price: number; status: string; variant_count?: number
+  replacement_cost_price: number; min_sale_price: number; grid_greenwind_price: number; grid_shengjing_price: number; status: string; variant_count?: number
   package_conversion_enabled: boolean
   variants?: VariantForm[]; active_variant_index?: number
 }
 interface VariantForm {
   id?: number; code: string; values: Record<string, string>; image_url: string
   reference_purchase_price: number | null; sale_price: number | null; monthly_rental_price: number | null
-  replacement_cost_price: number | null; min_sale_price: number | null; stock: number | null; status: string
+  replacement_cost_price: number | null; min_sale_price: number | null; grid_greenwind_price: number | null; grid_shengjing_price: number | null; stock: number | null; status: string
   unit: string; is_default: boolean; sort_order: number; conversion_quantity: number | null
 }
 
@@ -77,7 +77,7 @@ const emptyForm = () => ({
   sale_price: 0, stock: 0, image_url: '', image_urls: '', specification_items: '', purchase_unit: '盆',
   base_unit: '盆', project_unit: '盆', conversion_rate: 1, project_conversion_rate: 1,
   reference_purchase_price: 0, monthly_rental_price: 0, replacement_cost_price: 0,
-  min_sale_price: 0, package_conversion_enabled: false, status: '启用',
+  min_sale_price: 0, grid_greenwind_price: 0, grid_shengjing_price: 0, package_conversion_enabled: false, status: '启用',
 })
 const form = reactive(emptyForm())
 
@@ -104,7 +104,7 @@ function newVariant(seed?: Partial<VariantForm>): VariantForm {
   const variant: VariantForm = {
     code: nextVariantCode(), values, image_url: '',
     reference_purchase_price: null, sale_price: null, monthly_rental_price: null,
-    replacement_cost_price: null, min_sale_price: null, stock: null, status: '启用', unit: form.unit || '盆',
+    replacement_cost_price: null, min_sale_price: null, grid_greenwind_price: null, grid_shengjing_price: null, stock: null, status: '启用', unit: form.unit || '盆',
     conversion_quantity: null,
     is_default: variants.value.length === 0, sort_order: variants.value.length + 1, ...seed,
   }
@@ -164,6 +164,7 @@ async function loadRows() {
           image_url: item.image_url || '', reference_purchase_price: optionalNumber(item.reference_purchase_price),
           sale_price: optionalNumber(item.sale_price), monthly_rental_price: optionalNumber(item.monthly_rental_price),
           replacement_cost_price: optionalNumber(item.replacement_cost_price), min_sale_price: optionalNumber(item.min_sale_price),
+          grid_greenwind_price: optionalNumber(item.grid_greenwind_price), grid_shengjing_price: optionalNumber(item.grid_shengjing_price),
           stock: optionalNumber(item.stock), status: item.status, unit: item.unit || row.unit,
           is_default: Boolean(item.is_default), sort_order: item.sort_order ?? 100,
           conversion_quantity: optionalNumber(item.conversion_quantity),
@@ -223,6 +224,7 @@ async function openEdit(row: ProductRow) {
       image_url: item.image_url || '', reference_purchase_price: optionalNumber(item.reference_purchase_price),
       sale_price: optionalNumber(item.sale_price), monthly_rental_price: optionalNumber(item.monthly_rental_price),
       replacement_cost_price: optionalNumber(item.replacement_cost_price), min_sale_price: optionalNumber(item.min_sale_price),
+      grid_greenwind_price: optionalNumber(item.grid_greenwind_price), grid_shengjing_price: optionalNumber(item.grid_shengjing_price),
       stock: optionalNumber(item.stock), status: item.status,
       unit: item.unit || row.unit, is_default: Boolean(item.is_default), sort_order: item.sort_order ?? 100,
       conversion_quantity: optionalNumber(item.conversion_quantity),
@@ -232,7 +234,8 @@ async function openEdit(row: ProductRow) {
       variants.value = [newVariant({ code: `${row.code}-1`, values: legacyValues, image_url: row.image_url,
         reference_purchase_price: row.reference_purchase_price, sale_price: row.sale_price,
         monthly_rental_price: row.monthly_rental_price, replacement_cost_price: row.replacement_cost_price,
-        min_sale_price: row.min_sale_price, stock: row.stock, status: row.status })]
+        min_sale_price: row.min_sale_price, grid_greenwind_price: row.grid_greenwind_price,
+        grid_shengjing_price: row.grid_shengjing_price, stock: row.stock, status: row.status })]
     }
   } catch { variants.value = [newVariant()] }
   dialogVisible.value = true
@@ -382,6 +385,8 @@ async function save() {
     form.monthly_rental_price = valueOrZero(first.monthly_rental_price)
     form.replacement_cost_price = valueOrZero(first.replacement_cost_price)
     form.min_sale_price = valueOrZero(first.min_sale_price)
+    form.grid_greenwind_price = valueOrZero(first.grid_greenwind_price)
+    form.grid_shengjing_price = valueOrZero(first.grid_shengjing_price)
     form.stock = variants.value.reduce((sum, item) => sum + Number(item.stock || 0), 0)
   }
   saving.value = true
@@ -395,7 +400,8 @@ async function save() {
       const payload = { code: item.code.trim(), specification: variantSummary(item), specification_values: JSON.stringify(item.values),
         image_url: item.image_url, reference_purchase_price: valueOrZero(item.reference_purchase_price), sale_price: valueOrZero(item.sale_price),
         monthly_rental_price: valueOrZero(item.monthly_rental_price), replacement_cost_price: valueOrZero(item.replacement_cost_price),
-        min_sale_price: valueOrZero(item.min_sale_price), stock: valueOrZero(item.stock), status: item.status, unit: item.unit,
+        min_sale_price: valueOrZero(item.min_sale_price), grid_greenwind_price: valueOrZero(item.grid_greenwind_price),
+        grid_shengjing_price: valueOrZero(item.grid_shengjing_price), stock: valueOrZero(item.stock), status: item.status, unit: item.unit,
         is_default: item.is_default, sort_order: item.sort_order, conversion_quantity: valueOrZero(item.conversion_quantity) || 1 }
       if (item.id) await api.put(`/products/${productId}/variants/${item.id}`, payload)
       else await api.post(`/products/${productId}/variants`, payload)
@@ -510,7 +516,7 @@ onMounted(() => {
           </div>
           <div class="variant-table-scroll">
             <div class="variant-table">
-              <div class="variant-table-row variant-table-header" :class="{'has-conversion':form.package_conversion_enabled}"><div>默认</div><div>图片</div><div>盆径 / 高度 / 冠幅</div><div>{{ form.package_conversion_enabled ? '型号编号' : '规格编码' }}</div><div>单位</div><div>{{ form.package_conversion_enabled ? '采购价' : '采购价（最新采购入库价）' }}</div><div>销售价</div><div>月租价</div><div>库存</div><div>排序</div><div>操作</div></div>
+              <div class="variant-table-row variant-table-header" :class="{'has-conversion':form.package_conversion_enabled}"><div>默认</div><div>图片</div><div>盆径 / 高度 / 冠幅</div><div>{{ form.package_conversion_enabled ? '型号编号' : '规格编码' }}</div><div>单位</div><div>{{ form.package_conversion_enabled ? '采购价' : '采购价（最新采购入库价）' }}</div><div>销售价</div><div>月租价</div><div>绿风电网价</div><div>盛景电网价</div><div>库存</div><div>排序</div><div>操作</div></div>
               <div v-for="(variant,index) in variants" :key="variant.id || index" class="variant-table-row" :class="{'has-conversion':form.package_conversion_enabled}">
                 <div><button type="button" class="default-variant-button" :class="{active:variant.is_default}" @click="setDefaultVariant(index)">{{ variant.is_default ? '默认' : '设为默认' }}</button></div>
                 <div><label class="variant-table-image"><input type="file" accept="image/*" @change="handleVariantImage($event,index)" /><el-image v-if="variant.image_url" :src="variant.image_url" fit="cover" /><template v-else><el-icon><Picture /></el-icon><small>上传</small></template></label></div>
@@ -520,6 +526,8 @@ onMounted(() => {
                 <div class="purchase-price-cell"><el-input-number v-model="variant.reference_purchase_price" :min="0" :controls="false" :disabled="!form.package_conversion_enabled" @change="(value:number|undefined)=>variant.reference_purchase_price=decimal2(value)" /></div>
                 <div><el-input-number v-model="variant.sale_price" :min="0" :controls="false" @change="(value:number|undefined)=>variant.sale_price=decimal2(value)" /></div>
                 <div><el-input-number v-model="variant.monthly_rental_price" :min="0" :controls="false" @change="(value:number|undefined)=>variant.monthly_rental_price=decimal2(value)" /></div>
+                <div><el-input-number v-model="variant.grid_greenwind_price" :min="0" :controls="false" @change="(value:number|undefined)=>variant.grid_greenwind_price=decimal2(value)" /></div>
+                <div><el-input-number v-model="variant.grid_shengjing_price" :min="0" :controls="false" @change="(value:number|undefined)=>variant.grid_shengjing_price=decimal2(value)" /></div>
                 <div><el-input-number v-model="variant.stock" :min="0" :controls="false" @change="(value:number|undefined)=>variant.stock=decimal2(value)" /></div>
                 <div><el-input-number v-model="variant.sort_order" :min="0" :precision="0" :controls="false" /></div>
                 <div><el-button link type="danger" :icon="Delete" @click="removeVariant(index)">删除</el-button></div>

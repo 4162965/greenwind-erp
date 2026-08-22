@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import BusinessOrder, BusinessOrderItem, Contract, InvoiceRecord, OutboundOrder, OutboundOrderItem, Product, ProductVariant, Project, ProjectExpense, ProjectSalary, PurchaseOrder, PurchaseOrderItem, ReceiptRecord, User
+from ..models import BusinessOrder, BusinessOrderItem, Contract, InvoiceRecord, OutboundOrder, OutboundOrderItem, Product, ProductVariant, Project, ProjectExpense, ProjectSalary, PurchaseOrder, PurchaseOrderItem, PurchaseReceipt, PurchaseReceiptAllocation, ReceiptRecord, User
 from ..permissions import accessible_project_ids
 
 
@@ -261,8 +261,45 @@ def project_costs(
             }
         )
 
+    receipt_allocations = db.scalars(select(PurchaseReceiptAllocation).order_by(PurchaseReceiptAllocation.id)).all()
+    purchase_nos_with_receipt_cost: set[str] = set()
+    for allocation in receipt_allocations:
+        receipt = db.get(PurchaseReceipt, allocation.receipt_id)
+        allocation_date = (receipt.receipt_date if receipt else None) or allocation.created_at.date()
+        if not in_range(allocation_date, start, end):
+            continue
+        if receipt and receipt.source_purchase_no:
+            purchase_nos_with_receipt_cost.add(receipt.source_purchase_no)
+        project = project_map.get(allocation.project_id) if allocation.project_id else project_name_map.get(allocation.project_name)
+        if not project:
+            continue
+        cost = float(allocation.quantity or 0) * float(allocation.unit_price or 0)
+        if cost <= 0:
+            continue
+        buckets[project.id]["purchase_cost"] += cost
+        product = db.get(Product, allocation.product_id)
+        variant = db.get(ProductVariant, allocation.variant_id) if allocation.variant_id else None
+        product_name = product.name if product else "收据货品"
+        variant_name = (variant.specification or variant.code) if variant else ""
+        quantity_text = f"{float(allocation.quantity or 0):g}{allocation.unit or ''}"
+        price_text = f"{float(allocation.unit_price or 0):g}"
+        details.append(
+            {
+                "date": allocation_date.isoformat(),
+                "project_id": project.id,
+                "project_name": project.name,
+                "category": "收据分配成本",
+                "source_no": receipt.receipt_no if receipt else f"FP-{allocation.id}",
+                "description": f"{product_name}{(' ' + variant_name) if variant_name else ''} {quantity_text} × {price_text}",
+                "income": 0,
+                "cost": money(cost),
+            }
+        )
+
     purchase_orders = db.scalars(select(PurchaseOrder).order_by(PurchaseOrder.id)).all()
     for purchase in purchase_orders:
+        if purchase.order_no in purchase_nos_with_receipt_cost:
+            continue
         purchase_date = purchase.purchase_date or purchase.created_at.date()
         if not in_range(purchase_date, start, end):
             continue

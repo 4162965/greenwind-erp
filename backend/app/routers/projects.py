@@ -77,6 +77,7 @@ def project_payload(project: Project, db: Session):
 @router.get("/projects")
 def list_projects(
     keyword: str = Query(default="", max_length=100),
+    business: str = Query(default="", max_length=64),
     customer_id: int | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
@@ -93,6 +94,8 @@ def list_projects(
         filters.append(or_(Project.code.like(pattern), Project.name.like(pattern), Project.address.like(pattern)))
     if customer_id:
         filters.append(Project.customer_id == customer_id)
+    if business.strip():
+        filters.append(Project.business_types.like(f"%{business.strip()}%"))
     projects = db.scalars(select(Project).where(*filters).order_by(Project.id.desc())).all()
     total = db.scalar(select(func.count()).select_from(Project).where(*filters)) or 0
     return {"items": [project_payload(item, db) for item in projects], "total": total}

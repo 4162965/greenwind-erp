@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Check, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api/client'
@@ -8,6 +8,7 @@ import { api } from '../api/client'
 type Row = Record<string, any>
 
 const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
@@ -242,6 +243,32 @@ async function receiveOrder(row: Row) {
   }
 }
 
+function openReceiptInbound(row: Row) {
+  const draft = {
+    receipt_no: `RJ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`,
+    supplier: row.supplier || '',
+    purchaser: row.purchaser || defaultPurchaser(),
+    receipt_date: new Date().toISOString().slice(0, 10),
+    source_purchase_no: row.order_no || '',
+    notes: row.notes || '',
+    items: (row.items || []).map((item: Row) => ({
+      product_id: item.product_id,
+      variant_id: item.variant_id,
+      product_name: item.product_name,
+      variant_name: item.variant_name,
+      quantity: Number(item.received_quantity || item.quantity || 0),
+      unit: item.unit || '件',
+      unit_price: Number(item.unit_price || 0),
+      project_name: '',
+      business_order_no: row.source_no || '',
+      allocation_quantity: 0,
+      notes: item.notes || '',
+    })),
+  }
+  sessionStorage.setItem('greenwind_receipt_draft', JSON.stringify(draft))
+  router.push({ path: '/module/purchase/receipts', query: { draft: 'purchase' } })
+}
+
 function applyRouteKeyword() {
   highlightNo.value = String(route.query.highlight || '').trim()
 }
@@ -300,6 +327,7 @@ loadOrders()
                 <el-dropdown-menu>
                   <el-dropdown-item :disabled="scope.row.status === '已入库'" @click="openEdit(scope.row)">编辑</el-dropdown-item>
                   <el-dropdown-item :disabled="['待入库','已入库'].includes(scope.row.status)" @click="openComplete(scope.row)">采购完成</el-dropdown-item>
+                  <el-dropdown-item :disabled="scope.row.status === '待采购'" @click="openReceiptInbound(scope.row)">按收据入库</el-dropdown-item>
                   <el-dropdown-item :disabled="scope.row.status !== '待入库'" @click="receiveOrder(scope.row)">确认入库</el-dropdown-item>
                 </el-dropdown-menu>
               </template>

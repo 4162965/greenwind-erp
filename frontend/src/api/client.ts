@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 function getApiBaseUrl() {
-  const envBase = import.meta.env.VITE_API_BASE_URL
-  if (envBase) return envBase
+  const envBase = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+  if (envBase) return envBase.replace(/\/$/, '')
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location
     return `${protocol}//${hostname}:8010/api/v1`
