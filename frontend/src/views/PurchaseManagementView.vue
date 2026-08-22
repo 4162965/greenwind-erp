@@ -244,6 +244,7 @@ async function receiveOrder(row: Row) {
 }
 
 function openReceiptInbound(row: Row) {
+  const sourceOrderNo = row.source_no || ''
   const draft = {
     receipt_no: `RJ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`,
     supplier: row.supplier || '',
@@ -259,9 +260,9 @@ function openReceiptInbound(row: Row) {
       quantity: Number(item.received_quantity || item.quantity || 0),
       unit: item.unit || '件',
       unit_price: Number(item.unit_price || 0),
-      project_name: '',
-      business_order_no: row.source_no || '',
-      allocation_quantity: 0,
+      project_name: row.project_name || '',
+      business_order_no: sourceOrderNo,
+      allocation_quantity: sourceOrderNo ? Number(item.received_quantity || item.quantity || 0) : 0,
       notes: item.notes || '',
     })),
   }

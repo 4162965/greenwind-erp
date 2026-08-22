@@ -439,6 +439,7 @@ def allocate_receipt_balance_to_order(order: BusinessOrder, item: BusinessOrderI
         receipt = db.get(PurchaseReceipt, receipt_id)
         if not receipt:
             continue
+        db.flush()
         available = db.scalar(
             select(func.coalesce(func.sum(PurchaseReceiptItem.available_quantity), 0))
             .where(PurchaseReceiptItem.receipt_id == receipt_id)

@@ -98,6 +98,7 @@ def serialize_outbound(order: OutboundOrder, db: Session):
 
 
 def refresh_receipt_status(receipt: PurchaseReceipt, db: Session):
+    db.flush()
     available = db.scalar(
         select(func.sum(PurchaseReceiptItem.available_quantity))
         .where(PurchaseReceiptItem.receipt_id == receipt.id)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, Download, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api/client'
 
@@ -16,6 +16,7 @@ const receipts = ref<Row[]>([])
 const products = ref<Row[]>([])
 const variantCache = reactive<Record<number, Row[]>>({})
 const dialogVisible = ref(false)
+const receiptInput = ref<HTMLInputElement>()
 const form = reactive<Row>({
   receipt_no: '',
   supplier: '',
@@ -23,6 +24,7 @@ const form = reactive<Row>({
   receipt_date: new Date().toISOString().slice(0, 10),
   source_purchase_no: '',
   notes: '',
+  attachments: [],
   items: [],
 })
 
@@ -98,8 +100,10 @@ function resetForm() {
     receipt_date: new Date().toISOString().slice(0, 10),
     source_purchase_no: '',
     notes: '',
+    attachments: [],
     items: [emptyItem()],
   })
+  if (receiptInput.value) receiptInput.value.value = ''
 }
 
 async function openDraftFromRoute() {
@@ -121,6 +125,7 @@ async function openDraftFromRoute() {
     receipt_date: draft.receipt_date || new Date().toISOString().slice(0, 10),
     source_purchase_no: draft.source_purchase_no || '',
     notes: draft.notes || '',
+    attachments: Array.isArray(draft.attachments) ? draft.attachments : [],
     items: Array.isArray(draft.items) && draft.items.length ? draft.items.map((item: Row) => ({
       ...emptyItem(),
       ...item,
@@ -132,6 +137,48 @@ async function openDraftFromRoute() {
   await Promise.all((form.items || []).map((item: Row) => loadVariants(item.product_id)))
   sessionStorage.removeItem('greenwind_receipt_draft')
   dialogVisible.value = true
+}
+
+function chooseReceiptFile() {
+  receiptInput.value?.click()
+}
+
+function handleReceiptFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (file.size > 8 * 1024 * 1024) {
+    ElMessage.warning('单个收据附件不能超过8MB')
+    input.value = ''
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    form.attachments.push({
+      file_name: file.name,
+      file_type: file.type || 'application/octet-stream',
+      file_size: file.size,
+      data_url: String(reader.result || ''),
+      notes: '收据入库上传',
+    })
+    input.value = ''
+  }
+  reader.readAsDataURL(file)
+}
+
+function removeAttachment(index: number | string) {
+  form.attachments.splice(Number(index), 1)
+}
+
+function downloadAttachment(file: Row) {
+  if (!file.data_url) {
+    ElMessage.warning('附件内容为空')
+    return
+  }
+  const link = document.createElement('a')
+  link.href = file.data_url
+  link.download = file.file_name || '采购收据'
+  link.click()
 }
 
 async function openCreate() {
@@ -216,6 +263,7 @@ async function saveReceipt() {
       receipt_date: form.receipt_date || null,
       source_purchase_no: form.source_purchase_no,
       notes: form.notes,
+      attachments: form.attachments,
       items: payloadItems(),
     })
     ElMessage.success('收据入库成功')
@@ -277,6 +325,21 @@ onMounted(async () => {
         <el-table-column prop="purchaser" label="采购/仓管" width="115" />
         <el-table-column prop="receipt_date" label="收据日期" width="120" />
         <el-table-column prop="source_purchase_no" label="关联采购单" min-width="140" />
+        <el-table-column label="收据图片" min-width="180">
+          <template #default="scope">
+            <el-space wrap>
+              <el-button
+                v-for="file in (scope.row.attachments || [])"
+                :key="file.id || file.file_name"
+                link
+                type="primary"
+                :icon="Download"
+                @click="downloadAttachment(file)"
+              >{{ file.file_name || '收据附件' }}</el-button>
+              <span v-if="!(scope.row.attachments || []).length" class="muted">未上传</span>
+            </el-space>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="105"><template #default="scope"><el-tag :type="scope.row.status === '有未安排' ? 'success' : 'info'">{{ scope.row.status }}</el-tag></template></el-table-column>
         <el-table-column prop="notes" label="备注" min-width="180" show-overflow-tooltip />
       </el-table>
@@ -292,6 +355,16 @@ onMounted(async () => {
           <el-form-item label="关联采购单"><el-input v-model="form.source_purchase_no" /></el-form-item>
           <el-form-item label="备注" class="wide"><el-input v-model="form.notes" type="textarea" :rows="2" /></el-form-item>
         </div>
+
+        <section class="form-section">
+          <div class="section-title"><strong>收据图片</strong><span>支持图片或 PDF，保存后会进入资料附件</span></div>
+          <input ref="receiptInput" type="file" accept="image/*,.pdf" class="hidden-input" @change="handleReceiptFile" />
+          <div class="receipt-upload-line">
+            <el-button type="primary" plain :icon="Upload" @click="chooseReceiptFile">上传收据</el-button>
+            <span v-if="!form.attachments.length" class="muted">请上传采购收据照片或 PDF</span>
+            <el-tag v-for="(file,index) in form.attachments" :key="index" closable @close="removeAttachment(index)">{{ file.file_name }}</el-tag>
+          </div>
+        </section>
 
         <section class="form-section purchase-items-section">
           <div class="section-title"><strong>收据货品和去向</strong><span>去向数量不填或小于收据数量时，剩余部分进入未安排库存</span><el-button link type="success" :icon="Plus" @click="addItem">添加货品</el-button></div>

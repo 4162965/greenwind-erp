@@ -196,6 +196,7 @@ def normalize_receipt_item(item: PurchaseReceiptItem, db: Session):
 
 
 def refresh_receipt_status(receipt: PurchaseReceipt, db: Session):
+    db.flush()
     available = db.scalar(
         select(func.coalesce(func.sum(PurchaseReceiptItem.available_quantity), 0))
         .where(PurchaseReceiptItem.receipt_id == receipt.id)
@@ -209,6 +210,11 @@ def serialize_receipt(receipt: PurchaseReceipt, db: Session):
         select(PurchaseReceiptAllocation)
         .where(PurchaseReceiptAllocation.receipt_id == receipt.id)
         .order_by(PurchaseReceiptAllocation.id)
+    ).all()
+    attachments = db.scalars(
+        select(Attachment)
+        .where(Attachment.target_type == "采购收据", Attachment.target_id == receipt.id)
+        .order_by(Attachment.id.desc())
     ).all()
     allocation_map: dict[int, list[PurchaseReceiptAllocation]] = {}
     for allocation in allocations:
@@ -224,6 +230,19 @@ def serialize_receipt(receipt: PurchaseReceipt, db: Session):
         "notes": receipt.notes,
         "created_by": receipt.created_by,
         "created_at": receipt.created_at.isoformat() if receipt.created_at else "",
+        "attachments": [
+            {
+                "id": attachment.id,
+                "file_name": attachment.file_name,
+                "file_type": attachment.file_type,
+                "file_size": attachment.file_size,
+                "data_url": attachment.data_url,
+                "notes": attachment.notes,
+                "uploader_name": attachment.uploader_name,
+                "created_at": attachment.created_at.isoformat() if attachment.created_at else "",
+            }
+            for attachment in attachments
+        ],
         "items": [
             {
                 "id": item.id,
@@ -258,6 +277,64 @@ def serialize_receipt(receipt: PurchaseReceipt, db: Session):
             for item in items
         ],
     }
+
+
+def attach_receipt_files(receipt: PurchaseReceipt, payload: dict | None, db: Session, user: User):
+    if not payload:
+        return
+    files = payload.get("attachments") or payload.get("receipt_files") or []
+    if not isinstance(files, list):
+        return
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        data_url = str(entry.get("data_url") or "")
+        if not data_url:
+            continue
+        file_size = int(entry.get("file_size") or entry.get("size") or 0)
+        if file_size > 8 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="单个收据附件不能超过8MB")
+        db.add(
+            Attachment(
+                target_type="采购收据",
+                target_id=receipt.id,
+                target_name=receipt.receipt_no,
+                file_name=str(entry.get("file_name") or entry.get("name") or "采购收据"),
+                file_type=str(entry.get("file_type") or entry.get("type") or "image/*"),
+                file_size=file_size,
+                data_url=data_url,
+                notes=str(entry.get("notes") or "收据入库上传"),
+                uploader_id=user.id,
+                uploader_name=user.display_name or user.username,
+            )
+        )
+
+
+def copy_purchase_files_to_receipt(order: PurchaseOrder, receipt: PurchaseReceipt, db: Session, user: User):
+    files = db.scalars(
+        select(Attachment)
+        .where(
+            Attachment.target_type == "采购单",
+            Attachment.target_id == order.id,
+            or_(Attachment.notes.like("%收据%"), Attachment.file_name.like("%收据%")),
+        )
+        .order_by(Attachment.id)
+    ).all()
+    for file in files:
+        db.add(
+            Attachment(
+                target_type="采购收据",
+                target_id=receipt.id,
+                target_name=receipt.receipt_no,
+                file_name=file.file_name,
+                file_type=file.file_type,
+                file_size=file.file_size,
+                data_url=file.data_url,
+                notes=file.notes or f"由采购单 {order.order_no} 带入",
+                uploader_id=user.id,
+                uploader_name=user.display_name or user.username,
+            )
+        )
 
 
 def bundle_complete_stock(product: Product, db: Session) -> float:
@@ -444,6 +521,7 @@ def create_receipt(
                 )
             )
     refresh_receipt_status(receipt, db)
+    attach_receipt_files(receipt, payload, db, user)
     db.commit()
     db.refresh(receipt)
     return serialize_receipt(receipt, db)
@@ -648,6 +726,7 @@ def receive_order(
     items = db.scalars(select(PurchaseOrderItem).where(PurchaseOrderItem.order_id == order_id)).all()
     if not items:
         raise HTTPException(status_code=400, detail="采购单没有明细")
+    business = linked_business_order(order, db)
     existing_receipt = db.scalar(select(PurchaseReceipt).where(PurchaseReceipt.source_purchase_no == order.order_no).order_by(PurchaseReceipt.id))
     if not existing_receipt:
         receipt = PurchaseReceipt(
@@ -661,6 +740,7 @@ def receive_order(
         )
         db.add(receipt)
         db.flush()
+        copy_purchase_files_to_receipt(order, receipt, db, user)
         for item in items:
             received_quantity = float(item.received_quantity or item.quantity or 0)
             item.received_quantity = received_quantity
@@ -689,6 +769,28 @@ def receive_order(
             )
             normalize_receipt_item(receipt_item, db)
             db.add(receipt_item)
+            db.flush()
+            if business:
+                receipt_item.available_quantity = 0
+                db.add(
+                    PurchaseReceiptAllocation(
+                        receipt_item_id=receipt_item.id,
+                        receipt_id=receipt.id,
+                        product_id=receipt_item.product_id,
+                        variant_id=receipt_item.variant_id,
+                        project_id=business.project_id,
+                        project_name=business.project_name,
+                        business_order_id=business.id,
+                        business_order_no=business.order_no,
+                        quantity=received_quantity,
+                        unit=receipt_item.unit,
+                        unit_price=float(item.unit_price or 0),
+                        total_amount=received_quantity * float(item.unit_price or 0),
+                        allocation_type="项目订单",
+                        operator=user.display_name or user.username,
+                        notes=f"采购单 {order.order_no} 入库后自动绑定订单",
+                    )
+                )
             db.add(
                 InventoryMovement(
                     product_id=product.id,
