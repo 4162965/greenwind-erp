@@ -51,7 +51,7 @@ const exchangeCount = computed(() => data.value.maintenance_tasks?.length || 0)
 const purchaseCount = computed(() => data.value.purchase_tasks?.length || 0)
 
 const quickActions = computed(() => [
-  { title: '手机下单', desc: '租摆、销售、赠送、撤花', path: '/mobile/order/new', kind: 'add', tone: 'leaf' as Tone },
+  { title: '手机下单', desc: '租摆、工程、电网、保洁', path: '/mobile/order/new', kind: 'add', tone: 'leaf' as Tone },
   { title: '新建商品', desc: '植物、花盆、药肥工具', path: '/mobile/goods/new', kind: 'goods', tone: 'sun' as Tone },
 ])
 
@@ -68,19 +68,19 @@ const moduleGroups = computed(() => [
   {
     title: '仓配采购',
     modules: [
-      moduleItem('采购管理', '', 'goods', 'rose', purchaseCount.value),
-      moduleItem('商品库存', '', 'stock', 'violet'),
-      moduleItem('仓库配货', '', 'stock', 'aqua', data.value.inbound_tasks?.length || 0),
-      moduleItem('车辆记录', '', 'truck', 'stone'),
+      moduleItem('采购管理', '/mobile/purchases', 'goods', 'rose', purchaseCount.value),
+      moduleItem('商品库存', '/mobile/inventory', 'stock', 'violet'),
+      moduleItem('仓库配货', '/mobile/outbound', 'stock', 'aqua', data.value.inbound_tasks?.length || 0),
+      moduleItem('车辆记录', '/mobile/list/vehicles', 'truck', 'stone'),
     ],
   },
   {
     title: '资料报表',
     modules: [
-      moduleItem('客户项目', '', 'project', 'sky'),
-      moduleItem('项目植物', '', 'flower', 'leaf'),
-      moduleItem('订单进度', '', 'order', 'rose'),
-      moduleItem('费用报表', '', 'money', 'sun'),
+      moduleItem('客户项目', '/mobile/list/projects', 'project', 'sky'),
+      moduleItem('项目植物', '/mobile/list/project-plants', 'flower', 'leaf'),
+      moduleItem('订单进度', '/mobile/list/orders', 'order', 'rose'),
+      moduleItem('费用报表', '/mobile/list/reports', 'money', 'sun'),
     ],
   },
 ])
@@ -97,10 +97,6 @@ async function loadData() {
 }
 
 function go(path: string) {
-  if (!path) {
-    ElMessage.info('这个手机模块后面继续补')
-    return
-  }
   router.push(path)
 }
 

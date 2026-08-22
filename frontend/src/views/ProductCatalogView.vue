@@ -7,7 +7,7 @@ import { getUnitOptions } from '../utils/units'
 import { useAuthStore } from '../stores/auth'
 
 interface ProductRow {
-  id: number; code: string; name: string; category: string; specification: string; unit: string
+  id: number; code: string; name: string; category: string; project_categories: string; specification: string; unit: string
   sale_price: number; stock: number; image_url: string; image_urls: string; specification_items: string
   purchase_unit: string; base_unit: string; project_unit: string; conversion_rate: number
   project_conversion_rate: number; reference_purchase_price: number; monthly_rental_price: number
@@ -23,6 +23,7 @@ interface VariantForm {
 }
 
 const categoryOptions = ref<string[]>([])
+const projectCategoryOptions = ['租摆', '工程绿化', '电网', '保洁']
 const auth = useAuthStore()
 const canDeleteProduct = computed(() => {
   const roles = String(auth.user?.role || '').replace('，', ',').split(',').map((item) => item.trim())
@@ -73,7 +74,7 @@ function nextVariantCode() {
 }
 
 const emptyForm = () => ({
-  code: '', name: '', category: '植物', specification: '', unit: '盆',
+  code: '', name: '', category: '植物', project_categories: '', specification: '', unit: '盆',
   sale_price: 0, stock: 0, image_url: '', image_urls: '', specification_items: '', purchase_unit: '盆',
   base_unit: '盆', project_unit: '盆', conversion_rate: 1, project_conversion_rate: 1,
   reference_purchase_price: 0, monthly_rental_price: 0, replacement_cost_price: 0,
@@ -122,6 +123,7 @@ function readDimensions(row?: ProductRow): string[] {
 
 function resetForm(row?: ProductRow) {
   Object.assign(form, row || emptyForm())
+  ;(form as any).project_categories = row?.project_categories ? String(row.project_categories).split(',').filter(Boolean) : []
   images.value = row ? parseJson<string[]>(row.image_urls, row.image_url ? [row.image_url] : []).slice(0, 1) : []
   specDimensions.value = readDimensions(row)
   variants.value = []
@@ -375,24 +377,28 @@ async function save() {
   form.conversion_rate = 1
   variants.value.forEach((item) => { item.conversion_quantity = 1 })
   if (!form.package_conversion_enabled) variants.value.forEach((item) => { item.unit = form.unit })
-  form.specification_items = JSON.stringify(specDimensions.value)
-  form.specification = variants.value.map(variantSummary).filter(Boolean).join(' / ')
-  form.image_url = images.value[0] || ''
-  form.image_urls = JSON.stringify(images.value)
+  const payload = {
+    ...form,
+    project_categories: Array.isArray((form as any).project_categories) ? (form as any).project_categories.join(',') : String((form as any).project_categories || ''),
+    specification_items: JSON.stringify(specDimensions.value),
+    specification: variants.value.map(variantSummary).filter(Boolean).join(' / '),
+    image_url: images.value[0] || '',
+    image_urls: JSON.stringify(images.value),
+  }
   if (!form.package_conversion_enabled) {
-    form.reference_purchase_price = valueOrZero(first.reference_purchase_price)
-    form.sale_price = valueOrZero(first.sale_price)
-    form.monthly_rental_price = valueOrZero(first.monthly_rental_price)
-    form.replacement_cost_price = valueOrZero(first.replacement_cost_price)
-    form.min_sale_price = valueOrZero(first.min_sale_price)
-    form.grid_greenwind_price = valueOrZero(first.grid_greenwind_price)
-    form.grid_shengjing_price = valueOrZero(first.grid_shengjing_price)
-    form.stock = variants.value.reduce((sum, item) => sum + Number(item.stock || 0), 0)
+    payload.reference_purchase_price = valueOrZero(first.reference_purchase_price)
+    payload.sale_price = valueOrZero(first.sale_price)
+    payload.monthly_rental_price = valueOrZero(first.monthly_rental_price)
+    payload.replacement_cost_price = valueOrZero(first.replacement_cost_price)
+    payload.min_sale_price = valueOrZero(first.min_sale_price)
+    payload.grid_greenwind_price = valueOrZero(first.grid_greenwind_price)
+    payload.grid_shengjing_price = valueOrZero(first.grid_shengjing_price)
+    payload.stock = variants.value.reduce((sum, item) => sum + Number(item.stock || 0), 0)
   }
   saving.value = true
   let newlyCreatedProductId: number | null = null
   try {
-    const response = editingId.value ? await api.put(`/products/${editingId.value}`, form) : await api.post('/products', form)
+    const response = editingId.value ? await api.put(`/products/${editingId.value}`, payload) : await api.post('/products', payload)
     const productId = response.data.id as number
     if (!editingId.value) newlyCreatedProductId = productId
     for (const id of removedVariantIds.value) await api.delete(`/products/${productId}/variants/${id}`)
@@ -439,7 +445,10 @@ onMounted(() => {
         <article v-for="row in rows" :key="row.id" class="catalog-card">
           <div class="catalog-media"><el-image v-if="cardImage(row)" :src="cardImage(row)" fit="cover" /><div v-else class="catalog-image-empty"><el-icon><Picture /></el-icon><span>暂无图片</span></div></div>
           <div class="catalog-content">
-            <div class="catalog-title"><span>【{{ row.category || '通用' }}】{{ row.code }}</span><strong>{{ row.name }}</strong></div>
+            <div class="catalog-title"><span>【{{ row.category || '未分类' }}】{{ row.code }}</span><strong>{{ row.name }}</strong></div>
+            <div class="catalog-project-tags">
+              <el-tag v-for="item in String(row.project_categories || '通用').split(',').filter(Boolean)" :key="item" size="small" type="success" effect="plain">{{ item }}</el-tag>
+            </div>
             <div v-if="row.variants?.length" class="catalog-specs"><button v-if="row.package_conversion_enabled" type="button" class="parent-sku-button" :class="{ active: row.active_variant_index === -1 }" @click="selectParent(row)">成套采购</button><button v-for="(variant,index) in row.variants" :key="variant.id || index" type="button" :class="{ active: row.active_variant_index === index }" @click="selectVariant(row,index)">{{ variantLabel(variant) }}</button></div>
             <div class="catalog-selected"><span>已选：{{ activeCatalogItem(row).label }}</span><span>{{ activeVariant(row) ? '规格编码' : '商品编码' }} {{ activeCatalogItem(row).code }}</span><span>库存 {{ activeCatalogItem(row).stock }} {{ activeCatalogItem(row).unit }}</span></div>
             <div class="catalog-actions"><el-button type="success" :icon="Edit" @click="openEdit(row)">编辑</el-button><el-button type="success" plain @click="openStock(row)">查看库存</el-button><el-button v-if="canDeleteProduct" link type="danger" :icon="Delete" @click="remove(row)">删除</el-button></div>
@@ -501,6 +510,12 @@ onMounted(() => {
               <el-form-item label="商品编码" required><el-input v-model="form.code" @change="refreshVariantCodes" /><div class="field-help">自动按当天生成，例如 SP-202608201、SP-202608202</div></el-form-item>
               <el-form-item v-if="!form.package_conversion_enabled" label="商品单位" class="basic-left"><el-select v-model="form.unit" filterable allow-create style="width:100%"><el-option v-for="item in unitOptions" :key="item" :label="item" :value="item" /></el-select><div class="field-help">普通商品的库存、项目和出库统一使用此单位</div></el-form-item>
               <el-form-item v-else label="整套采购单位" required class="basic-left"><el-select v-model="form.purchase_unit" filterable allow-create style="width:100%"><el-option v-for="item in unitOptions" :key="item" :label="item" :value="item" /></el-select><div class="field-help">套盆一般选“套”，每套包含下方的大号、中号、小号</div></el-form-item>
+              <el-form-item label="项目分类">
+                <el-select v-model="form.project_categories" multiple clearable collapse-tags collapse-tags-tooltip style="width:100%" placeholder="为空表示所有项目通用">
+                  <el-option v-for="item in projectCategoryOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+                <div class="field-help">选择后，仅在对应业务订单里优先显示；不选就是通用商品</div>
+              </el-form-item>
               <el-form-item label="必须成套采购" class="basic-right"><div class="bundle-switch"><el-switch v-model="form.package_conversion_enabled" @change="handleBundlePurchaseChange" /><span>{{ form.package_conversion_enabled ? '已开启：需要其中一个型号时，也必须采购整套大/中/小' : '未开启：各规格可分开采购' }}</span></div></el-form-item>
               <el-form-item label="商品状态" class="basic-right"><el-radio-group v-model="form.status"><el-radio value="启用">启用</el-radio><el-radio value="停用">停用</el-radio></el-radio-group></el-form-item>
               <div v-if="form.package_conversion_enabled" class="conversion-guide"><strong>成套规则</strong><span>下方维护大号、中号、小号，项目可选择其中一个型号；采购需求只要涉及其中一个型号，就按整套采购。</span><small>整套总价填在规格信息上方，型号采购价人工拆分填写</small></div>

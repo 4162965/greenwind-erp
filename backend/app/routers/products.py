@@ -83,6 +83,7 @@ def suggest_product_code(
 @router.get("")
 def list_products(
     keyword: str = Query(default="", max_length=100),
+    project_category: str = Query(default="", max_length=64),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -90,6 +91,9 @@ def list_products(
     if keyword.strip():
         pattern = f"%{keyword.strip()}%"
         filters.append(or_(Product.code.like(pattern), Product.name.like(pattern), Product.category.like(pattern)))
+    if project_category.strip():
+        category = project_category.strip()
+        filters.append(or_(Product.project_categories == "", Product.project_categories.is_(None), Product.project_categories.like(f"%{category}%")))
     items = db.scalars(select(Product).where(*filters).order_by(Product.id.desc())).all()
     total = db.scalar(select(func.count()).select_from(Product).where(*filters)) or 0
     return {"items": [ProductRead.model_validate(item) for item in items], "total": total}

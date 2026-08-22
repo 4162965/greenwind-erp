@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { Check, Refresh } from '@element-plus/icons-vue'
+import { Check, Delete, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../../api/client'
 
@@ -13,6 +13,8 @@ const products = ref<Row[]>([])
 const productOptions = ref<Row[]>([])
 const variantCache = reactive<Record<number, Row[]>>({})
 const recentOrders = ref<Row[]>([])
+const photoInput = ref<HTMLInputElement>()
+const photos = ref<Row[]>([])
 const form = reactive<Row>({
   request_type: '换花',
   project_id: null,
@@ -37,7 +39,7 @@ async function loadData() {
   try {
     const [projectRes, productRes, orderRes] = await Promise.all([
       api.get('/projects'),
-      api.get('/products'),
+      api.get('/products', { params: { project_category: '租摆' } }),
       api.get('/orders', { params: { order_type: 'exchange' } }),
     ])
     projects.value = projectRes.data.items || []
@@ -120,6 +122,31 @@ function resetAfterSave() {
   form.reason = ''
   form.expected_date = ''
   form.notes = ''
+  photos.value = []
+}
+
+function choosePhotos() {
+  photoInput.value?.click()
+}
+
+function handlePhotos(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (photos.value.length + files.length > 6) {
+    ElMessage.warning('一次最多上传 6 张现场照片')
+    input.value = ''
+    return
+  }
+  files.forEach((file) => {
+    if (file.size > 5 * 1024 * 1024) {
+      ElMessage.warning(`${file.name} 超过 5MB`)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => photos.value.push({ file_name: file.name, file_type: file.type || 'image/*', file_size: file.size, data_url: String(reader.result || '') })
+    reader.readAsDataURL(file)
+  })
+  input.value = ''
 }
 
 async function submit() {
@@ -138,6 +165,18 @@ async function submit() {
   saving.value = true
   try {
     const response = await api.post('/orders/mobile-exchange-request', form)
+    for (const photo of photos.value) {
+      await api.post('/attachments', {
+        target_type: '换花现场照片',
+        target_id: response.data.id,
+        target_name: `${response.data.order_no}｜${response.data.project_name || ''}`,
+        file_name: photo.file_name,
+        file_type: photo.file_type,
+        file_size: photo.file_size,
+        data_url: photo.data_url,
+        notes: form.location_text || form.reason || '',
+      })
+    }
     ElMessage.success(`已提交：${response.data.order_no}`)
     resetAfterSave()
     await loadData()
@@ -207,6 +246,16 @@ onMounted(loadData)
         </div>
         <el-form-item label="原因/现场说明">
           <el-input v-model="form.reason" type="textarea" :rows="3" placeholder="例如：叶片发黄、植物死亡、花盆破损、领导要求更换" />
+        </el-form-item>
+        <el-form-item label="现场照片">
+          <input ref="photoInput" class="hidden-input" type="file" accept="image/*" capture="environment" multiple @change="handlePhotos" />
+          <div class="mobile-photo-grid">
+            <button type="button" class="mobile-photo-add" @click="choosePhotos"><el-icon><Plus /></el-icon><span>拍照上传</span></button>
+            <div v-for="(photo,index) in photos" :key="`${photo.file_name}-${index}`" class="mobile-photo">
+              <el-image :src="photo.data_url" fit="cover" />
+              <button type="button" @click="photos.splice(index,1)"><el-icon><Delete /></el-icon></button>
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="期望完成日期">
           <el-date-picker v-model="form.expected_date" value-format="YYYY-MM-DD" clearable />

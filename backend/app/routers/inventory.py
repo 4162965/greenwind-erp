@@ -127,6 +127,30 @@ def apply_outbound_stock(order: OutboundOrder, db: Session):
     items = db.scalars(select(OutboundOrderItem).where(OutboundOrderItem.order_id == order.id).order_by(OutboundOrderItem.id)).all()
     if not items:
         raise HTTPException(status_code=400, detail="出库单没有明细")
+    business_order = linked_business_order(order, db)
+    if business_order:
+        for item in items:
+            filters = [
+                PurchaseReceiptAllocation.business_order_id == business_order.id,
+                PurchaseReceiptAllocation.product_id == item.product_id,
+            ]
+            if item.variant_id:
+                filters.append(PurchaseReceiptAllocation.variant_id == item.variant_id)
+            else:
+                filters.append(PurchaseReceiptAllocation.variant_id.is_(None))
+            allocations = db.scalars(
+                select(PurchaseReceiptAllocation).where(*filters).order_by(PurchaseReceiptAllocation.id)
+            ).all()
+            allocated_quantity = sum(float(allocation.quantity or 0) for allocation in allocations)
+            if allocated_quantity + 0.000001 < float(item.quantity or 0):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{item.product_name} {item.variant_name} 的收据货品分配不足，请先在订单点击采购匹配库存或完成采购入库",
+                )
+            allocated_cost = sum(float(allocation.total_amount or 0) for allocation in allocations)
+            if allocated_quantity > 0:
+                item.unit_price = allocated_cost / allocated_quantity
+        return
     for item in items:
         product = db.get(Product, item.product_id)
         if not product:
@@ -257,6 +281,8 @@ def list_inventory(
                 PurchaseReceiptItem.product_name.like(pattern),
                 PurchaseReceiptItem.variant_name.like(pattern),
                 PurchaseReceiptItem.receipt_id.in_(receipt_ids),
+                PurchaseReceiptItem.product_id.in_(select(Product.id).where(Product.code.like(pattern))),
+                PurchaseReceiptItem.variant_id.in_(select(ProductVariant.id).where(ProductVariant.code.like(pattern))),
             )
         )
     receipt_items = db.scalars(
@@ -294,8 +320,6 @@ def list_inventory(
                 "status": "未安排",
             }
         )
-    if low_stock_only:
-        items = [item for item in items if item["stock"] <= 0]
     return {"items": items, "total": len(items)}
 
     filters = []

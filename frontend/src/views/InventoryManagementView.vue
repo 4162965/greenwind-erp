@@ -9,7 +9,6 @@ type Row = Record<string, any>
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
-const lowStockOnly = ref(false)
 const movementKeyword = ref('')
 const movementType = ref('')
 const rows = ref<Row[]>([])
@@ -21,12 +20,12 @@ const form = reactive({ new_stock: null as number | null, notes: '' })
 const allocateForm = reactive({ project_name: '', business_order_no: '', quantity: null as number | null, notes: '' })
 
 const totalStock = computed(() => rows.value.reduce((sum, row) => sum + Number(row.stock || 0), 0))
-const noStockCount = computed(() => rows.value.filter((row) => Number(row.stock || 0) <= 0).length)
+const totalValue = computed(() => rows.value.reduce((sum, row) => sum + Number(row.stock_value || 0), 0))
 
 function typeLabel(type: string) {
-  if (type === 'bundle') return '鏁村'
-  if (type === 'variant') return '瑙勬牸'
-  return '鍟嗗搧'
+  if (type === 'bundle') return '整套'
+  if (type === 'variant') return '规格'
+  return '商品'
 }
 
 function typeTag(type: string) {
@@ -51,9 +50,9 @@ function formatMoney(value: number | string | null | undefined) {
 async function loadRows() {
   loading.value = true
   try {
-    rows.value = (await api.get('/inventory', { params: { keyword: keyword.value.trim(), low_stock_only: lowStockOnly.value } })).data.items
+    rows.value = (await api.get('/inventory', { params: { keyword: keyword.value.trim() } })).data.items
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || '搴撳瓨鍒楄〃鍔犺浇澶辫触')
+    ElMessage.error(error.response?.data?.detail || '库存列表加载失败')
   } finally {
     loading.value = false
   }
@@ -65,7 +64,7 @@ async function loadMovements() {
       params: { keyword: movementKeyword.value.trim(), movement_type: movementType.value, limit: 80 },
     })).data.items
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || '搴撳瓨娴佹按鍔犺浇澶辫触')
+    ElMessage.error(error.response?.data?.detail || '库存流水加载失败')
   }
 }
 
@@ -105,7 +104,7 @@ async function saveAdjust() {
     await loadRows()
     await loadMovements()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || '搴撳瓨璋冩暣澶辫触')
+    ElMessage.error(error.response?.data?.detail || '库存调整失败')
   } finally {
     saving.value = false
   }
@@ -159,48 +158,50 @@ loadMovements()
     </div>
 
     <div class="inventory-summary">
-      <div><span>搴撳瓨鏉＄洰</span><strong>{{ rows.length }}</strong></div>
-      <div><span>褰撳墠鏁伴噺鍚堣</span><strong>{{ formatNumber(totalStock) }}</strong></div>
-      <div><span>缺货/零库存</span><strong>{{ noStockCount }}</strong></div>
+      <div><span>库存条目</span><strong>{{ rows.length }}</strong></div>
+      <div><span>当前数量合计</span><strong>{{ formatNumber(totalStock) }}</strong></div>
+      <div><span>未安排库存金额</span><strong>{{ formatMoney(totalValue) }}</strong></div>
     </div>
 
     <article class="panel table-panel">
       <div class="table-toolbar inventory-toolbar">
         <el-input v-model="keyword" clearable :prefix-icon="Search" placeholder="搜索规格编码、商品编码、商品名称或分类" @keyup.enter="loadRows" @clear="loadRows" />
-        <el-checkbox v-model="lowStockOnly" @change="loadRows">鍙湅缂鸿揣</el-checkbox>
-        <el-button type="success" plain :icon="Search" @click="loadRows">鏌ヨ</el-button>
-        <el-button :icon="Refresh" @click="keyword=''; lowStockOnly=false; loadRows()">閲嶇疆</el-button>
+        <el-button type="success" plain :icon="Search" @click="loadRows">查询</el-button>
+        <el-button :icon="Refresh" @click="keyword=''; loadRows()">重置</el-button>
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
+        <el-table-column prop="receipt_no" label="收据号" min-width="150" />
+        <el-table-column prop="receipt_date" label="收据日期" width="112" />
+        <el-table-column prop="supplier" label="供应商" min-width="130" show-overflow-tooltip />
         <el-table-column prop="variant_code" label="规格编码" min-width="150">
           <template #default="scope">{{ scope.row.variant_code || '—' }}</template>
         </el-table-column>
         <el-table-column prop="product_code" label="商品编码" min-width="130" />
-        <el-table-column prop="product_name" label="鍟嗗搧鍚嶇О" min-width="180" />
-        <el-table-column prop="category" label="鍒嗙被" width="100" />
-        <el-table-column label="绫诲瀷" width="86">
+        <el-table-column prop="product_name" label="商品名称" min-width="180" />
+        <el-table-column prop="category" label="分类" width="100" />
+        <el-table-column label="类型" width="86">
           <template #default="scope"><el-tag :type="typeTag(scope.row.item_type)" size="small">{{ typeLabel(scope.row.item_type) }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="specification" label="瑙勬牸/鍨嬪彿" min-width="160" show-overflow-tooltip />
-        <el-table-column label="搴撳瓨" width="105">
+        <el-table-column prop="specification" label="规格/型号" min-width="160" show-overflow-tooltip />
+        <el-table-column label="库存" width="105">
           <template #default="scope"><strong :class="{ danger: Number(scope.row.stock || 0) <= 0 }">{{ formatNumber(scope.row.stock) }}</strong></template>
         </el-table-column>
-        <el-table-column prop="unit" label="鍗曚綅" width="80" />
-        <el-table-column label="鏈€杩戦噰璐环" width="115">
+        <el-table-column prop="unit" label="单位" width="80" />
+        <el-table-column label="最近采购价" width="115">
           <template #default="scope">{{ formatMoney(scope.row.reference_purchase_price) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="90">
-          <template #default="scope"><el-tag :type="scope.row.status === '鍚敤' ? 'success' : 'info'" size="small">{{ scope.row.status }}</el-tag></template>
+          <template #default="scope"><el-tag :type="scope.row.status === '启用' ? 'success' : 'info'" size="small">{{ scope.row.status }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="鎿嶄綔" width="95">
+        <el-table-column label="操作" width="95">
           <template #default="scope">
             <el-dropdown trigger="click">
-              <el-button link type="primary" class="table-more-button">鏇村<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+              <el-button link type="primary" class="table-more-button">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item :icon="Plus" @click="openAllocate(scope.row)">分配去向</el-dropdown-item>
-                  <el-dropdown-item :icon="Edit" @click="openAdjust(scope.row)">鐩樼偣璋冩暣</el-dropdown-item>
+                  <el-dropdown-item :icon="Edit" @click="openAdjust(scope.row)">盘点调整</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -217,60 +218,60 @@ loadMovements()
         </div>
       </div>
       <div class="table-toolbar inventory-toolbar">
-        <el-input v-model="movementKeyword" clearable :prefix-icon="Search" placeholder="鎼滅储鍟嗗搧銆佹潵婧愬崟鍙枫€佹搷浣滀汉" @keyup.enter="loadMovements" @clear="loadMovements" />
-        <el-select v-model="movementType" clearable placeholder="娴佹按绫诲瀷" @change="loadMovements">
-          <el-option label="閲囪喘鍏ュ簱" value="閲囪喘鍏ュ簱" />
-          <el-option label="鐩樼偣璋冩暣" value="鐩樼偣璋冩暣" />
+        <el-input v-model="movementKeyword" clearable :prefix-icon="Search" placeholder="搜索商品、来源单号、操作人" @keyup.enter="loadMovements" @clear="loadMovements" />
+        <el-select v-model="movementType" clearable placeholder="流水类型" @change="loadMovements">
+          <el-option label="采购入库" value="采购入库" />
+          <el-option label="盘点调整" value="盘点调整" />
           <el-option label="收据余量分配" value="收据余量分配" />
         </el-select>
-        <el-button type="success" plain :icon="Search" @click="loadMovements">鏌ヨ娴佹按</el-button>
-        <el-button :icon="Refresh" @click="movementKeyword=''; movementType=''; loadMovements()">閲嶇疆</el-button>
+        <el-button type="success" plain :icon="Search" @click="loadMovements">查询流水</el-button>
+        <el-button :icon="Refresh" @click="movementKeyword=''; movementType=''; loadMovements()">重置</el-button>
       </div>
       <el-table :data="movements" stripe>
-        <el-table-column prop="created_at" label="鏃堕棿" min-width="155">
+        <el-table-column prop="created_at" label="时间" min-width="155">
           <template #default="scope">{{ scope.row.created_at ? scope.row.created_at.replace('T', ' ').slice(0, 19) : '' }}</template>
         </el-table-column>
-        <el-table-column prop="movement_type" label="绫诲瀷" width="95" />
-        <el-table-column prop="direction" label="鏂瑰悜" width="76">
-          <template #default="scope"><el-tag :type="scope.row.direction === '鍏ュ簱' ? 'success' : 'warning'" size="small">{{ scope.row.direction }}</el-tag></template>
+        <el-table-column prop="movement_type" label="类型" width="105" />
+        <el-table-column prop="direction" label="方向" width="76">
+          <template #default="scope"><el-tag :type="scope.row.direction === '入库' ? 'success' : 'warning'" size="small">{{ scope.row.direction }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="product_name" label="鍟嗗搧" min-width="160" />
-        <el-table-column prop="variant_name" label="瑙勬牸" min-width="130" show-overflow-tooltip />
-        <el-table-column label="鏁伴噺" width="95">
+        <el-table-column prop="product_name" label="商品" min-width="160" />
+        <el-table-column prop="variant_name" label="规格" min-width="130" show-overflow-tooltip />
+        <el-table-column label="数量" width="95">
           <template #default="scope">{{ formatNumber(scope.row.quantity) }} {{ scope.row.unit }}</template>
         </el-table-column>
-        <el-table-column label="搴撳瓨鍙樺寲" min-width="130">
-          <template #default="scope">{{ formatNumber(scope.row.before_stock) }} 鈫?{{ formatNumber(scope.row.after_stock) }}</template>
+        <el-table-column label="库存变化" min-width="130">
+          <template #default="scope">{{ formatNumber(scope.row.before_stock) }} → {{ formatNumber(scope.row.after_stock) }}</template>
         </el-table-column>
-        <el-table-column label="閲戦" width="100">
+        <el-table-column label="金额" width="100">
           <template #default="scope">{{ formatMoney(scope.row.total_amount) }}</template>
         </el-table-column>
-        <el-table-column label="鏉ユ簮" min-width="150">
+        <el-table-column label="来源" min-width="150">
           <template #default="scope">{{ [scope.row.source_type, scope.row.source_no].filter(Boolean).join('，') || '-' }}</template>
         </el-table-column>
         <el-table-column prop="operator" label="操作人" width="100" />
-        <el-table-column prop="notes" label="澶囨敞" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="notes" label="备注" min-width="150" show-overflow-tooltip />
       </el-table>
     </article>
 
-    <el-dialog v-model="dialogVisible" title="鐩樼偣璋冩暣" width="520px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" title="盘点调整" width="520px" destroy-on-close>
       <div v-if="selected" class="adjust-card">
         <div><span>规格编码</span><strong>{{ selected.variant_code || '—' }}</strong></div>
         <div><span>商品</span><strong>{{ selected.product_name }}</strong></div>
         <div><span>规格</span><strong>{{ selected.specification }}</strong></div>
-        <div><span>褰撳墠搴撳瓨</span><strong>{{ formatNumber(selected.stock) }} {{ selected.unit }}</strong></div>
+        <div><span>当前库存</span><strong>{{ formatNumber(selected.stock) }} {{ selected.unit }}</strong></div>
       </div>
       <el-form label-position="top">
         <el-form-item label="盘点后数量" required>
           <el-input-number v-model="form.new_stock" :min="0" :controls="false" style="width:100%" />
         </el-form-item>
-        <el-form-item label="澶囨敞">
+        <el-form-item label="备注">
           <el-input v-model="form.notes" type="textarea" :rows="3" placeholder="例如：仓库盘点、破损报损、历史数据修正" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible=false">鍙栨秷</el-button>
-        <el-button type="success" :loading="saving" @click="saveAdjust">淇濆瓨璋冩暣</el-button>
+        <el-button @click="dialogVisible=false">取消</el-button>
+        <el-button type="success" :loading="saving" @click="saveAdjust">保存调整</el-button>
       </template>
     </el-dialog>
 
@@ -303,4 +304,3 @@ loadMovements()
     </el-dialog>
   </div>
 </template>
-

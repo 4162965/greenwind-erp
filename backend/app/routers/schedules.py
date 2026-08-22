@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import current_user
-from ..models import BusinessOrder, BusinessOrderItem, Employee, InventoryMovement, OutboundOrder, OutboundOrderItem, Product, ProductVariant, Project, PurchaseOrder, ScheduleTask, User, Vehicle
+from ..models import BusinessOrder, BusinessOrderItem, Employee, InventoryMovement, OutboundOrder, OutboundOrderItem, Product, ProductVariant, Project, PurchaseOrder, PurchaseReceiptAllocation, ScheduleTask, User, Vehicle
 from ..permissions import can_access_project, employee_for_user
 from .orders import apply_project_plant_linkage
 from ..schemas import (
@@ -126,6 +126,11 @@ def product_stock(product: Product, db: Session) -> float:
 
 
 def apply_delivery_stock(order: BusinessOrder, task: ScheduleTask, db: Session):
+    receipt_allocation = db.scalar(
+        select(PurchaseReceiptAllocation.id).where(PurchaseReceiptAllocation.business_order_id == order.id)
+    )
+    if receipt_allocation:
+        return
     if db.scalar(
         select(InventoryMovement.id).where(
             InventoryMovement.source_type == "配送完成",

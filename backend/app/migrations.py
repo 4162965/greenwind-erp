@@ -89,6 +89,7 @@ SQLITE_COLUMNS = {
     "products": {
         "image_url": "VARCHAR(500) NOT NULL DEFAULT ''",
         "image_urls": "TEXT NOT NULL DEFAULT ''",
+        "project_categories": "VARCHAR(255) NOT NULL DEFAULT ''",
         "specification_items": "TEXT NOT NULL DEFAULT ''",
         "purchase_unit": "VARCHAR(32) NOT NULL DEFAULT '件'",
         "base_unit": "VARCHAR(32) NOT NULL DEFAULT '件'",

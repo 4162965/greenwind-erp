@@ -76,13 +76,20 @@ def accessible_project_ids(user: User, db: Session) -> set[int] | None:
     if not employee:
         return set()
 
+    employee_role_text = ",".join(
+        str(value or "")
+        for value in (employee.position, employee.role, employee.business_roles)
+    )
+    employee_is_supervisor = any(role in employee_role_text for role in SUPERVISOR_ROLES)
+    employee_is_maintainer = any(role in employee_role_text for role in MAINTAINER_ROLES)
+
     ids: set[int] = set()
-    if is_supervisor(user):
+    if is_supervisor(user) or employee_is_supervisor:
         supervised = db.scalars(
             select(Project.id).where(or_(Project.supervisor_id == employee.id, Project.customer_service_id == employee.id))
         ).all()
         ids.update(supervised)
-    if is_maintainer(user) or not ids:
+    if is_maintainer(user) or employee_is_maintainer or not ids:
         maintained = db.scalars(
             select(ProjectMaintainer.project_id).where(
                 ProjectMaintainer.employee_id == employee.id,

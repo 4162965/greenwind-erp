@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowLeft, Check, Plus, Refresh, Remove } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -28,9 +28,44 @@ const form = reactive<Row>({
 })
 
 const selectedProject = computed(() => projects.value.find((item) => item.id === form.project_id))
+const currentProjectCategory = computed(() => {
+  if (String(form.order_type || '').startsWith('engineering')) return '工程绿化'
+  if (String(form.order_type || '').startsWith('grid')) return '电网'
+  if (String(form.order_type || '').startsWith('cleaning')) return '保洁'
+  return '租摆'
+})
+const selectableProducts = computed(() => products.value.filter((product) => {
+  const categories = String(product.project_categories || '').split(',').map((item) => item.trim()).filter(Boolean)
+  return !categories.length || categories.includes(currentProjectCategory.value)
+}))
+const selectableProjects = computed(() => projects.value.filter((project) => {
+  const businesses = String(project.business_types || project.business_type || '').split(',').map((item) => item.trim()).filter(Boolean)
+  return !businesses.length || businesses.includes(currentProjectCategory.value)
+}))
+
+const orderTypeOptions = [
+  { label: '租摆订单', value: 'lease' },
+  { label: '销售订单', value: 'sales' },
+  { label: '赠送订单', value: 'gift' },
+  { label: '撤花订单', value: 'withdraw' },
+  { label: '工程订单', value: 'engineering' },
+  { label: '工程物料', value: 'engineering-material' },
+  { label: '电网绿风', value: 'grid-greenwind' },
+  { label: '电网盛景', value: 'grid-shengjing' },
+  { label: '保洁订单', value: 'cleaning' },
+  { label: '保洁物料', value: 'cleaning-material' },
+]
+
+function unitPrice(product: Row, variant?: Row) {
+  if (form.order_type === 'grid-greenwind') return variant?.grid_greenwind_price || product.grid_greenwind_price || variant?.sale_price || product.sale_price || 0
+  if (form.order_type === 'grid-shengjing') return variant?.grid_shengjing_price || product.grid_shengjing_price || variant?.sale_price || product.sale_price || 0
+  if (['lease', 'exchange'].includes(form.order_type)) return variant?.monthly_rental_price || product.monthly_rental_price || variant?.sale_price || product.sale_price || 0
+  return variant?.sale_price || product.sale_price || variant?.monthly_rental_price || product.monthly_rental_price || 0
+}
 
 function orderNo() {
-  return `SJDD-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Date.now().toString().slice(-5)}`
+  const prefixes: Record<string, string> = { lease: 'ZB', sales: 'XS', gift: 'ZS', withdraw: 'CH', engineering: 'GC', 'engineering-material': 'GW', 'grid-greenwind': 'DL', 'grid-shengjing': 'DS', cleaning: 'BJ', 'cleaning-material': 'BW' }
+  return `${prefixes[form.order_type] || 'SJ'}${Date.now().toString().slice(-6)}`
 }
 
 async function loadData() {
@@ -57,7 +92,7 @@ async function productChanged(row: Row) {
   const product = products.value.find((item) => item.id === row.product_id)
   row.product_name = product?.name || ''
   row.unit = product?.project_unit || product?.unit || '盆'
-  row.unit_price = product?.sale_price || null
+  row.unit_price = product ? unitPrice(product) : null
   if (row.product_id) await loadVariants(row.product_id)
 }
 
@@ -66,7 +101,8 @@ function variantChanged(row: Row) {
   const variant = variants.find((item) => item.id === row.variant_id)
   row.variant_name = variant?.specification || ''
   row.unit = variant?.unit || row.unit
-  row.unit_price = variant?.sale_price || variant?.monthly_rental_price || row.unit_price
+  const product = products.value.find((item) => item.id === row.product_id)
+  row.unit_price = product ? unitPrice(product, variant) : row.unit_price
 }
 
 function projectChanged() {
@@ -135,6 +171,14 @@ async function submit() {
 }
 
 onMounted(loadData)
+watch(() => form.order_type, () => {
+  if (form.project_id && !selectableProjects.value.some((project) => project.id === form.project_id)) form.project_id = null
+  form.items.forEach((item: Row) => {
+    if (item.product_id && !selectableProducts.value.some((product) => product.id === item.product_id)) {
+      Object.assign(item, { product_id: null, variant_id: null, product_name: '', variant_name: '', unit_price: null })
+    }
+  })
+})
 </script>
 
 <template>
@@ -148,16 +192,13 @@ onMounted(loadData)
     <section class="mobile-form-card pretty compact-form">
       <el-form label-position="top">
         <el-form-item label="订单类型">
-          <el-segmented v-model="form.order_type" :options="[
-            { label: '租摆', value: 'lease' },
-            { label: '销售', value: 'sales' },
-            { label: '赠送', value: 'gift' },
-            { label: '撤花', value: 'withdraw' },
-          ]" />
+          <el-select v-model="form.order_type" placeholder="选择业务订单类型">
+            <el-option v-for="item in orderTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="项目" required>
           <el-select v-model="form.project_id" filterable clearable placeholder="选择项目" @change="projectChanged">
-            <el-option v-for="project in projects" :key="project.id" :label="`${project.name} · ${project.customer_name || '未关联客户'}`" :value="project.id" />
+            <el-option v-for="project in selectableProjects" :key="project.id" :label="`${project.name} · ${project.customer_name || '未关联客户'}`" :value="project.id" />
           </el-select>
         </el-form-item>
         <div class="mobile-inline-two">
@@ -177,7 +218,7 @@ onMounted(loadData)
             </div>
             <el-form-item label="商品">
               <el-select v-model="row.product_id" filterable placeholder="选择商品" @change="productChanged(row)">
-                <el-option v-for="product in products" :key="product.id" :label="product.name" :value="product.id" />
+                <el-option v-for="product in selectableProducts" :key="product.id" :label="product.name" :value="product.id" />
               </el-select>
             </el-form-item>
             <div class="mobile-inline-two">

@@ -332,7 +332,7 @@ function openProgress(row: Row) {
 
 async function loadBaseData() {
   const [productResponse, projectResponse, customerResponse] = await Promise.all([
-    api.get('/products'),
+    api.get('/products', { params: { project_category: projectBusiness.value } }),
     api.get('/projects', { params: { business: projectBusiness.value } }),
     api.get('/customers'),
   ])

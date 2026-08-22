@@ -9,9 +9,14 @@ import MobileMaintenanceView from '../views/mobile/MobileMaintenanceView.vue'
 import MobileExchangeRequestView from '../views/mobile/MobileExchangeRequestView.vue'
 import MobileOrderCreateView from '../views/mobile/MobileOrderCreateView.vue'
 import MobileProductCreateView from '../views/mobile/MobileProductCreateView.vue'
+import MobilePurchaseView from '../views/mobile/MobilePurchaseView.vue'
+import MobileInventoryView from '../views/mobile/MobileInventoryView.vue'
+import MobileOutboundView from '../views/mobile/MobileOutboundView.vue'
+import MobileDirectoryView from '../views/mobile/MobileDirectoryView.vue'
 import ModuleView from '../views/ModuleView.vue'
 import BasicListView from '../views/BasicListView.vue'
 import EntityCrudView from '../views/EntityCrudView.vue'
+import ProjectManagementView from '../views/ProjectManagementView.vue'
 import OrderManagementView from '../views/OrderManagementView.vue'
 import ProductCatalogView from '../views/ProductCatalogView.vue'
 import PurchaseManagementView from '../views/PurchaseManagementView.vue'
@@ -74,6 +79,10 @@ const routes = [
       { path: 'tasks', name: 'mobile-tasks', component: MobileTasksView, meta: { title: '移动任务', mobile: true } },
       { path: 'exchange', name: 'mobile-exchange', component: MobileExchangeRequestView, meta: { title: '手机报单', mobile: true } },
       { path: 'maintenance', name: 'mobile-maintenance', component: MobileMaintenanceView, meta: { title: '移动养护', mobile: true } },
+      { path: 'purchases', name: 'mobile-purchases', component: MobilePurchaseView, meta: { title: '移动采购', mobile: true } },
+      { path: 'inventory', name: 'mobile-inventory', component: MobileInventoryView, meta: { title: '库存余量', mobile: true } },
+      { path: 'outbound', name: 'mobile-outbound', component: MobileOutboundView, meta: { title: '仓库配货', mobile: true } },
+      { path: 'list/:module', name: 'mobile-directory', component: MobileDirectoryView, meta: { title: '移动查询', mobile: true } },
     ],
   },
   {
@@ -85,27 +94,15 @@ const routes = [
       { path: '403', name: 'forbidden', component: ForbiddenView, meta: { title: '无权限' } },
       { path: 'goods', name: 'goods', component: ProductCatalogView, meta: { title: title.goods, permission: 'goods' } },
       { path: 'customers', name: 'customers', component: EntityCrudView, meta: { title: title.customers, entity: 'customer', permission: 'customers' } },
-      { path: 'projects', name: 'projects', component: BasicListView, meta: { title: title.projects, endpoint: '/projects', queryParams: ['business'], permission: 'projects', canCreate: true, canEdit: true, columns: [
-        { prop: 'code', label: '项目编号', width: 120 }, { prop: 'name', label: '项目名称', minWidth: 180 }, { prop: 'customer_name', label: '客户', minWidth: 140 }, { prop: 'business_types', label: '业务类型', minWidth: 130 }, { prop: 'supervisor_name', label: '主管', width: 100 }, { prop: 'status', label: '状态', width: 90 }, { prop: 'address', label: '地址', minWidth: 220 },
-      ], formFields: [
-        { key: 'code', label: '项目编号', required: true },
-        { key: 'name', label: '项目名称', required: true },
-        { key: 'customer_id', label: '客户', type: 'select', required: true, ...customerOptions },
-        { key: 'business_types', label: '业务类型', type: 'multi-select', options: businessTypeOptions, default: ['租摆'], defaultFromQuery: 'business' },
-        { key: 'plant_source', label: '植物来源', type: 'select', options: ['新采购', '买断上一家', '客户自有', '库存调拨'], default: '新采购' },
-        { key: 'supervisor_id', label: '负责主管', type: 'select', ...employeeOptions },
-        { key: 'customer_service_id', label: '客服', type: 'select', ...employeeOptions },
-        { key: 'start_date', label: '开始日期', type: 'date' },
-        { key: 'status', label: '状态', type: 'select', options: ['进行中', '暂停', '已结束'], default: '进行中' },
-        { key: 'address', label: '地址', type: 'textarea', full: true },
-        { key: 'notes', label: '备注', type: 'textarea', full: true },
-      ] } },
+      { path: 'projects', name: 'projects', component: ProjectManagementView, meta: { title: title.projects, permission: 'projects' } },
       { path: 'staff', name: 'staff', component: EntityCrudView, meta: { title: title.staff, entity: 'employee', permission: 'staff' } },
       { path: 'module/order/:orderType', name: 'order-management', component: OrderManagementView, meta: { title: title.orders, permission: 'orders' } },
       { path: 'module/purchase/list', name: 'purchase-list', component: PurchaseManagementView, meta: { title: title.purchase, permission: 'purchase_inventory' } },
       { path: 'module/purchase/receipts', name: 'purchase-receipts', component: ReceiptInboundView, meta: { title: '收据入库', permission: 'purchase_inventory' } },
       { path: 'module/warehouse/list', name: 'warehouse-list', component: OutboundManagementView, meta: { title: title.outbound, permission: 'orders' } },
+      { path: 'module/warehouse/outbound', name: 'warehouse-outbound', component: OutboundManagementView, meta: { title: '出库记录', permission: 'purchase_inventory' } },
       { path: 'module/schedule/list', name: 'schedule-list', component: ScheduleManagementView, meta: { title: title.schedule, permission: 'schedule_workflow' } },
+      { path: 'module/schedule/daily', name: 'schedule-daily', component: ScheduleManagementView, meta: { title: title.schedule, permission: 'schedule_workflow' } },
       { path: 'module/system/settings', name: 'system-settings', component: SystemSettingsView, meta: { title: title.settings, permission: 'system' } },
       { path: 'module/system/logs', name: 'operation-logs', component: OperationLogsView, meta: { title: title.operationLogs, permission: 'system' } },
       { path: 'module/report/:reportType', name: 'report-summary', component: ReportSummaryView, meta: { title: title.projectCost, permission: 'reports' } },

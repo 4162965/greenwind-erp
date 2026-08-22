@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ArrowLeft, Check, Picture, Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, Camera, Check, Picture, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { api } from '../../api/client'
@@ -10,22 +10,50 @@ const saving = ref(false)
 const categoryDialog = ref(false)
 const newCategory = ref('')
 const categories = ref<string[]>([])
+const projectCategoryOptions = ['租摆', '工程绿化', '电网', '保洁']
+const imageInput = ref<HTMLInputElement>()
 
 const form = reactive({
   name: '',
   category: '植物',
+  project_categories: [] as string[],
   code: '',
   specification: '',
   unit: '盆',
   reference_purchase_price: null as number | null,
   sale_price: null as number | null,
   monthly_rental_price: null as number | null,
+  grid_greenwind_price: null as number | null,
+  grid_shengjing_price: null as number | null,
   stock: null as number | null,
   image_url: '',
 })
 
-function autoCode() {
-  if (!form.code) form.code = `SP-${Date.now().toString().slice(-8)}`
+async function autoCode() {
+  if (form.code) return
+  try {
+    form.code = (await api.get('/products/next-code')).data.code || ''
+  } catch {
+    ElMessage.error('商品编码生成失败，请检查服务连接')
+  }
+}
+
+function chooseImage() {
+  imageInput.value?.click()
+}
+
+function handleImage(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('商品图片不能超过 5MB')
+    input.value = ''
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => { form.image_url = String(reader.result || ''); input.value = '' }
+  reader.readAsDataURL(file)
 }
 
 async function loadCategories() {
@@ -61,13 +89,15 @@ async function submit() {
     ElMessage.warning('请填写商品名称')
     return
   }
-  autoCode()
+  await autoCode()
+  if (!form.code) return
   saving.value = true
   try {
     const payload = {
       code: form.code,
       name: form.name,
       category: form.category || '未分类',
+      project_categories: form.project_categories.join(','),
       specification: form.specification || '',
       unit: form.unit || '盆',
       purchase_unit: form.unit || '盆',
@@ -78,6 +108,8 @@ async function submit() {
       reference_purchase_price: Number(form.reference_purchase_price || 0),
       sale_price: Number(form.sale_price || 0),
       monthly_rental_price: Number(form.monthly_rental_price || 0),
+      grid_greenwind_price: Number(form.grid_greenwind_price || 0),
+      grid_shengjing_price: Number(form.grid_shengjing_price || 0),
       stock: Number(form.stock || 0),
       image_url: form.image_url || '',
       image_urls: form.image_url ? JSON.stringify([form.image_url]) : '',
@@ -89,8 +121,9 @@ async function submit() {
     }
     const product = (await api.post('/products', payload)).data
     if (form.specification.trim()) {
+      const variantCode = (await api.get(`/products/${product.id}/variants/next-code`)).data.code
       await api.post(`/products/${product.id}/variants`, {
-        code: `${form.code}-01`,
+        code: variantCode,
         specification: form.specification,
         specification_values: form.specification,
         image_url: form.image_url || '',
@@ -101,6 +134,8 @@ async function submit() {
         reference_purchase_price: Number(form.reference_purchase_price || 0),
         sale_price: Number(form.sale_price || 0),
         monthly_rental_price: Number(form.monthly_rental_price || 0),
+        grid_greenwind_price: Number(form.grid_greenwind_price || 0),
+        grid_shengjing_price: Number(form.grid_shengjing_price || 0),
         replacement_cost_price: 0,
         min_sale_price: 0,
         stock: Number(form.stock || 0),
@@ -116,7 +151,7 @@ async function submit() {
   }
 }
 
-onMounted(loadCategories)
+onMounted(async () => { await Promise.all([loadCategories(), autoCode()]) })
 </script>
 
 <template>
@@ -132,14 +167,13 @@ onMounted(loadCategories)
           <img v-if="form.image_url" :src="form.image_url" alt="商品图片" />
           <div v-else><el-icon><Picture /></el-icon><span>商品图片</span></div>
         </div>
+        <input ref="imageInput" class="hidden-input" type="file" accept="image/*" capture="environment" @change="handleImage" />
         <div class="mobile-product-main">
           <el-form label-position="top">
             <el-form-item label="商品名称" required>
               <el-input v-model="form.name" placeholder="例如：小绿萝" @blur="autoCode" />
             </el-form-item>
-            <el-form-item label="图片地址">
-              <el-input v-model="form.image_url" placeholder="粘贴图片地址" />
-            </el-form-item>
+            <el-form-item label="商品图片"><el-button type="primary" plain :icon="Camera" @click="chooseImage">拍照或选择图片</el-button></el-form-item>
           </el-form>
         </div>
       </div>
@@ -160,6 +194,11 @@ onMounted(loadCategories)
             </el-select>
           </el-form-item>
         </div>
+        <el-form-item label="适用项目">
+          <el-select v-model="form.project_categories" multiple clearable collapse-tags placeholder="不选表示通用">
+            <el-option v-for="item in projectCategoryOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
         <div class="mobile-inline-two">
           <el-form-item label="规格">
             <el-input v-model="form.specification" placeholder="180# / 中号 / 1.8m" />
@@ -172,8 +211,8 @@ onMounted(loadCategories)
           <el-form-item label="采购价">
             <el-input-number v-model="form.reference_purchase_price" :min="0" :precision="2" :controls="false" placeholder="可空" />
           </el-form-item>
-          <el-form-item label="库存">
-            <el-input-number v-model="form.stock" :min="0" :precision="0" :controls="false" placeholder="可空" />
+          <el-form-item label="电网绿风价">
+            <el-input-number v-model="form.grid_greenwind_price" :min="0" :precision="2" :controls="false" placeholder="可空" />
           </el-form-item>
         </div>
         <div class="mobile-inline-two">
@@ -184,6 +223,9 @@ onMounted(loadCategories)
             <el-input-number v-model="form.monthly_rental_price" :min="0" :precision="2" :controls="false" placeholder="可空" />
           </el-form-item>
         </div>
+        <el-form-item label="电网盛景价">
+          <el-input-number v-model="form.grid_shengjing_price" :min="0" :precision="2" :controls="false" placeholder="可空" />
+        </el-form-item>
         <el-button class="mobile-submit gradient" type="success" :loading="saving" :icon="Check" @click="submit">保存商品</el-button>
       </el-form>
     </section>

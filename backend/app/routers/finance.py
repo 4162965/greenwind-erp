@@ -296,9 +296,7 @@ def generate_receivables_from_contract(contract_id: int, db: Session = Depends(g
         current = start
         while current <= end:
             next_start = add_months(current, step)
-            period_end = min(add_months(next_start, 0) if False else next_start, end)
-            period_end = min(period_end.replace(day=1) if False else next_start, end)
-            period_end = min(add_months(current, step) if step else end, end)
+            period_end = min(next_start, end)
             if period_end > current:
                 period_end = period_end.fromordinal(period_end.toordinal() - 1) if period_end < end else end
             periods.append((current, period_end))

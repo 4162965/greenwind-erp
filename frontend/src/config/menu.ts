@@ -105,9 +105,8 @@ export const menuItems: MenuItem[] = [
     icon: Goods,
     permission: 'purchase_inventory',
     children: [
-      { label: '未安排库存', path: '/module/inventory/check', permission: 'purchase_inventory' },
-      { label: '库存盘点', path: '/module/inventory/check', permission: 'purchase_inventory' },
-      { label: '出库记录', path: '/module/warehouse/list', permission: 'purchase_inventory' },
+      { label: '库存余量与盘点', path: '/module/inventory/check', permission: 'purchase_inventory' },
+      { label: '出库记录', path: '/module/warehouse/outbound', permission: 'purchase_inventory' },
     ],
   },
   {
@@ -115,10 +114,8 @@ export const menuItems: MenuItem[] = [
     icon: Van,
     permission: 'schedule_workflow',
     children: [
-      { label: '配送订单', path: '/module/warehouse/list', permission: 'orders' },
       { label: '配送派单', path: '/module/schedule/list', permission: 'schedule_workflow' },
-      { label: '每日安排表', path: '/module/schedule/list', permission: 'schedule_workflow' },
-      { label: '车辆管理', path: '/module/vehicle/list', permission: 'vehicle' },
+      { label: '每日安排表', path: '/module/schedule/daily', permission: 'schedule_workflow' },
     ],
   },
   {

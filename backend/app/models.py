@@ -61,6 +61,7 @@ class Product(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
     category: Mapped[str] = mapped_column(String(64), default="未分类")
+    project_categories: Mapped[str] = mapped_column(String(255), default="")
     specification: Mapped[str] = mapped_column(String(128), default="")
     unit: Mapped[str] = mapped_column(String(32), default="件")
     sale_price: Mapped[float] = mapped_column(Float, default=0)

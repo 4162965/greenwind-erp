@@ -153,11 +153,19 @@ def test_product_and_variant_code_suggestions_and_inventory_variant_code_search(
     next_variant_code = client.get(f"/api/v1/products/{product['id']}/variants/next-code", headers=headers)
     assert next_variant_code.json()["code"] == f"{product['code']}-2"
 
+    receipt = client.post(
+        "/api/v1/purchases/receipts",
+        headers=headers,
+        json={
+            "receipt_no": "RJ-CODE-001",
+            "items": [{"product_id": product["id"], "variant_id": variant["id"], "quantity": 3, "unit": "盆", "unit_price": 2.5}],
+        },
+    )
+    assert receipt.status_code == 201
     inventory = client.get(f"/api/v1/inventory?keyword={variant['code']}", headers=headers)
     assert inventory.status_code == 200
     assert inventory.json()["total"] == 1
     assert inventory.json()["items"][0]["variant_code"] == variant["code"]
-    client.delete(f"/api/v1/products/{product['id']}", headers=headers)
 
 
 def test_purchase_receive_updates_variant_stock_and_price():
@@ -208,15 +216,18 @@ def test_purchase_receive_updates_variant_stock_and_price():
     assert received.status_code == 200
     assert received.json()["status"] == "已入库"
     variants = client.get(f"/api/v1/products/{product['id']}/variants", headers=headers).json()["items"]
-    assert variants[0]["stock"] == 7
+    assert variants[0]["stock"] == 2
     assert variants[0]["reference_purchase_price"] == 4.5
-    movements = client.get("/api/v1/inventory/movements?keyword=CG-TEST-001", headers=headers)
+    inventory = client.get("/api/v1/inventory?keyword=PUR-PLANT-001-180", headers=headers)
+    assert inventory.status_code == 200
+    assert inventory.json()["total"] == 1
+    assert inventory.json()["items"][0]["stock"] == 5
+    movements = client.get("/api/v1/inventory/movements?keyword=采购测试", headers=headers)
     assert movements.status_code == 200
     assert movements.json()["total"] == 1
-    assert movements.json()["items"][0]["movement_type"] == "采购入库"
-    assert movements.json()["items"][0]["before_stock"] == 2
-    assert movements.json()["items"][0]["after_stock"] == 7
-    client.delete(f"/api/v1/products/{product['id']}", headers=headers)
+    assert movements.json()["items"][0]["movement_type"] == "收据入库"
+    assert movements.json()["items"][0]["before_stock"] == 0
+    assert movements.json()["items"][0]["after_stock"] == 5
 
 
 def test_inventory_list_and_adjust_variant_stock():
@@ -238,6 +249,15 @@ def test_inventory_list_and_adjust_variant_stock():
         },
     ).json()
 
+    receipt = client.post(
+        "/api/v1/purchases/receipts",
+        headers=headers,
+        json={
+            "receipt_no": "RJ-INVENTORY-001",
+            "items": [{"product_id": product["id"], "variant_id": variant["id"], "quantity": 2, "unit": "盆", "unit_price": 3.5}],
+        },
+    )
+    assert receipt.status_code == 201
     listed = client.get("/api/v1/inventory?keyword=库存测试", headers=headers)
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
@@ -246,12 +266,12 @@ def test_inventory_list_and_adjust_variant_stock():
     adjusted = client.post(
         "/api/v1/inventory/adjust",
         headers=headers,
-        json={"product_id": product["id"], "variant_id": variant["id"], "new_stock": 9},
+        json={"receipt_item_id": listed.json()["items"][0]["receipt_item_id"], "new_stock": 9, "notes": "测试盘盈"},
     )
     assert adjusted.status_code == 200
-    variants = client.get(f"/api/v1/products/{product['id']}/variants", headers=headers).json()["items"]
-    assert variants[0]["stock"] == 9
-    movements = client.get("/api/v1/inventory/movements?movement_type=盘点调整&keyword=库存测试", headers=headers)
+    relisted = client.get("/api/v1/inventory?keyword=库存测试", headers=headers).json()["items"]
+    assert relisted[0]["stock"] == 9
+    movements = client.get("/api/v1/inventory/movements?movement_type=收据余量盘点&keyword=库存测试", headers=headers)
     assert movements.status_code == 200
     assert movements.json()["total"] >= 1
     assert movements.json()["items"][0]["before_stock"] == 2
@@ -260,10 +280,9 @@ def test_inventory_list_and_adjust_variant_stock():
     rejected = client.post(
         "/api/v1/inventory/adjust",
         headers=headers,
-        json={"product_id": product["id"], "variant_id": variant["id"], "new_stock": -1},
+        json={"receipt_item_id": listed.json()["items"][0]["receipt_item_id"], "new_stock": -1},
     )
     assert rejected.status_code == 400
-    client.delete(f"/api/v1/products/{product['id']}", headers=headers)
 
 
 def test_outbound_order_confirms_and_writes_stock_movement():
@@ -310,7 +329,6 @@ def test_outbound_order_confirms_and_writes_stock_movement():
     assert movements.json()["items"][0]["direction"] == "出库"
     assert movements.json()["items"][0]["before_stock"] == 6
     assert movements.json()["items"][0]["after_stock"] == 4
-    client.delete(f"/api/v1/products/{product['id']}", headers=headers)
 
 
 def test_business_order_create_list_and_status_change():
@@ -393,10 +411,10 @@ def test_business_order_generates_purchase_and_outbound_orders():
     assert purchase.json()["purchase_order_no"] == "CG-DD-LINK-001"
     listed_purchase = client.get("/api/v1/purchases?keyword=CG-DD-LINK-001", headers=headers)
     assert listed_purchase.json()["total"] == 1
-    assert listed_purchase.json()["items"][0]["status"] == "待分配"
+    assert listed_purchase.json()["items"][0]["status"] == "待采购"
     assert listed_purchase.json()["items"][0]["items"][0]["unit_price"] == 22
     order_with_purchase = client.get("/api/v1/orders?order_type=sales&keyword=DD-LINK-001", headers=headers).json()["items"][0]
-    assert [node["key"] for node in order_with_purchase["progress"]] == ["purchase", "inbound", "outbound", "delivery"]
+    assert [node["key"] for node in order_with_purchase["progress"]] == ["purchase", "inbound", "delivery"]
     assert order_with_purchase["progress"][0]["ref_no"] == "CG-DD-LINK-001"
     assert "description" in order_with_purchase["progress"][0]
     assigned_purchase = client.post(f"/api/v1/purchases/{purchase.json()['purchase_order_id']}/assign", headers=headers, json={"purchaser": "采购员A"})
@@ -429,6 +447,64 @@ def test_business_order_generates_purchase_and_outbound_orders():
     linked_progress = {node["key"]: node for node in linked_order["progress"]}
     assert linked_progress["delivery"]["status"] == "已完成"
     assert linked_progress["delivery"]["ref_no"] == "RC-CK-DD-LINK-001"
+
+
+def test_receipt_inventory_is_allocated_fifo_and_not_deducted_twice_on_outbound():
+    headers = auth_headers()
+    product = client.post(
+        "/api/v1/products",
+        headers=headers,
+        json={"code": "FIFO-PLANT-001", "name": "收据库存测试绿萝", "category": "植物", "unit": "盆", "purchase_unit": "盆"},
+    ).json()
+    variant = client.post(
+        f"/api/v1/products/{product['id']}/variants",
+        headers=headers,
+        json={"code": "FIFO-PLANT-001-180", "specification": "180#", "unit": "盆", "stock": 0},
+    ).json()
+    receipt = client.post(
+        "/api/v1/purchases/receipts",
+        headers=headers,
+        json={
+            "receipt_no": "RJ-FIFO-001",
+            "items": [{"product_id": product["id"], "variant_id": variant["id"], "quantity": 2, "unit": "盆", "unit_price": 8}],
+        },
+    )
+    assert receipt.status_code == 201
+    order = client.post(
+        "/api/v1/orders",
+        headers=headers,
+        json={
+            "order_no": "DD-FIFO-001",
+            "order_type": "sales",
+            "project_name": "收据分配项目",
+            "customer_name": "收据分配客户",
+            "requester": "客服测试",
+            "order_date": "2026-08-22",
+            "need_purchase": True,
+            "need_delivery": True,
+            "items": [{"product_id": product["id"], "variant_id": variant["id"], "quantity": 2, "unit": "盆"}],
+        },
+    ).json()
+    matched = client.post(f"/api/v1/orders/{order['id']}/create-purchase", headers=headers)
+    assert matched.status_code == 200
+    assert matched.json()["status"] == "receipt_allocated"
+    assert matched.json()["allocations"][0]["allocated_quantity"] == 2
+    assert client.get("/api/v1/inventory?keyword=FIFO-PLANT-001-180", headers=headers).json()["total"] == 0
+
+    schedule = client.post(f"/api/v1/schedules/from-order/{order['id']}", headers=headers)
+    assert schedule.status_code == 200
+    completed = client.post(f"/api/v1/schedules/{schedule.json()['schedule_id']}/status", headers=headers, json={"status": "已完成"})
+    assert completed.status_code == 200
+    delivery_movements = client.get("/api/v1/inventory/movements?movement_type=配送带货&keyword=收据库存测试", headers=headers)
+    assert delivery_movements.json()["total"] == 0
+
+    outbound = client.post(f"/api/v1/orders/{order['id']}/create-outbound", headers=headers)
+    assert outbound.status_code == 200
+    confirmed = client.post(f"/api/v1/inventory/outbound-orders/{outbound.json()['outbound_order_id']}/confirm", headers=headers)
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "已出库"
+    variants = client.get(f"/api/v1/products/{product['id']}/variants", headers=headers).json()["items"]
+    assert variants[0]["stock"] == 0
     client.delete(f"/api/v1/products/{product['id']}", headers=headers)
 
 

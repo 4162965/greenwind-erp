@@ -74,7 +74,7 @@ ORDER_PREFIX = {
 }
 
 # 审批机制还没有最终确定，先保留代码但暂停自动触发。
-APPROVAL_FLOW_ENABLED = False
+APPROVAL_FLOW_ENABLED = True
 
 
 def next_business_order_no(order_type: str, db: Session, preferred: str = "") -> str:
@@ -822,7 +822,7 @@ def workflow_progress(order: BusinessOrder, db: Session) -> list[dict]:
             }
         )
 
-    if False and (order_requires_outbound(order) or outbound):
+    if order_requires_outbound(order) or outbound:
         outbound_status = outbound.status if outbound else "未生成"
         nodes.append(
             {
